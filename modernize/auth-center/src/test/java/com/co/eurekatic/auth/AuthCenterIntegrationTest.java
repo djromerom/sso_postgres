@@ -10,17 +10,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.reactive.server.FluxExchangeResult;
+import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.test.web.servlet.client.MockMvcWebTestClient;
+import org.springframework.web.context.WebApplicationContext;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,24 +29,41 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * End-to-end integration test for the auth-center module.
  *
- * <p>Boots the full Spring context on a random port (replacing the
- * Postgres datasource with an in-memory H2) and exercises the
- * authentication surface via real HTTP calls using TestRestTemplate.
+ * <p>Boots the full Spring context (replacing the Postgres datasource
+ * with an in-memory H2) and exercises the authentication surface via
+ * the Spring filter chain — Security, custom JWT filter, the
+ * {@code JsonLoginFilter}, controllers and exception handlers all
+ * participate as they would in production. The {@code MOCK}
+ * {@code webEnvironment} is sufficient because MockMvc routes requests
+ * through the same {@link jakarta.servlet.Filter} chain that Tomcat
+ * would; no real port is opened.
  *
- * <p>Verifies the contract that downstream services will rely on:
+ * <p>Verified contract:
  * <ol>
  *   <li>Bad credentials return 401.</li>
  *   <li>Good credentials return 200 + a JWT-shaped body.</li>
  *   <li>{@code /getInfoUser} accepts the token and returns the user.</li>
  *   <li>Missing token on a protected endpoint returns 401.</li>
+ *   <li>Refresh-cookie issuance, rotation, and logout all match the
+ *       documented contract.</li>
  * </ol>
+ *
+ * <p><b>Boot 4.0 migration note:</b> {@code TestRestTemplate} was
+ * removed in Spring Boot 4. The replacement for servlet integration
+ * tests is {@link WebTestClient} bound to the
+ * {@link WebApplicationContext} via {@link MockMvcWebTestClient}. That
+ * connector still drives the real DispatcherServlet + Spring Security
+ * filter chain — only the transport differs (in-process instead of
+ * loopback HTTP). We capture response bodies and the {@code Set-Cookie}
+ * header via {@link FluxExchangeResult#getResponseHeaders()} and
+ * {@link FluxExchangeResult#getResponseBodyContent()}.
  *
  * <p>Eureka client is disabled so the test does not require a running
  * registry; we test the auth-center in isolation.
  */
 @SpringBootTest(
         classes = AuthCenterApplication.class,
-        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT
+        webEnvironment = SpringBootTest.WebEnvironment.MOCK
 )
 @TestPropertySource(properties = {
         // Replace Postgres with H2 in PostgreSQL compatibility mode
@@ -63,8 +81,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 })
 class AuthCenterIntegrationTest {
 
-    @LocalServerPort
-    int port;
+    @Autowired
+    WebApplicationContext context;
 
     @Autowired
     UserRepository userRepository;
@@ -76,13 +94,27 @@ class AuthCenterIntegrationTest {
     PasswordEncoder passwordEncoder;
 
     @Autowired
-    TestRestTemplate rest;
-
-    @Autowired
     ObjectMapper mapper;
+
+    /**
+     * Built per-test from the live {@link WebApplicationContext} so it
+     * sees the same Spring Security filter chain (incl.
+     * {@code JwtAuthenticationFilter} and {@code JsonLoginFilter}) that
+     * production requests hit.
+     */
+    private WebTestClient webTestClient;
 
     @BeforeEach
     void seed() {
+        // .apply(springSecurity()) wires the SecurityFilterChain bean
+        // (incl. JsonLoginFilter and JwtAuthenticationFilter) into the
+        // underlying MockMvc. Without it, MockMvc skips the security
+        // chain and POST /login falls through to a 404 because no
+        // @PostMapping handles it — the filter is the handler.
+        webTestClient = MockMvcWebTestClient.bindToApplicationContext(context)
+                .apply(SecurityMockMvcConfigurers.springSecurity())
+                .build();
+
         userRepository.deleteAll();
         roleRepository.deleteAll();
 
@@ -109,30 +141,24 @@ class AuthCenterIntegrationTest {
 
     @Test
     void loginWithBadCredentialsReturns401() {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        ResponseEntity<String> response = rest.exchange(
-                url("/login"),
-                HttpMethod.POST,
-                new HttpEntity<>("{\"username\":\"alice\",\"password\":\"wrong\"}", headers),
-                String.class);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        webTestClient.post().uri("/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"username\":\"alice\",\"password\":\"wrong\"}")
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
     void loginWithGoodCredentialsReturnsJwt() throws Exception {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
+        byte[] bodyBytes = webTestClient.post().uri("/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"username\":\"alice\",\"password\":\"s3cret\"}")
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.OK)
+                .returnResult(Void.class)
+                .getResponseBodyContent();
 
-        ResponseEntity<String> response = rest.exchange(
-                url("/login"),
-                HttpMethod.POST,
-                new HttpEntity<>("{\"username\":\"alice\",\"password\":\"s3cret\"}", headers),
-                String.class);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        JsonNode body = mapper.readTree(response.getBody());
+        JsonNode body = mapper.readTree(bodyBytes);
         assertThat(body.get("token").asText()).isNotBlank();
         assertThat(body.get("refreshToken").asText()).isNotBlank();
         assertThat(body.get("expiresIn").asLong()).isEqualTo(3600L);
@@ -142,42 +168,36 @@ class AuthCenterIntegrationTest {
     void getInfoUserAcceptsIssuedToken() throws Exception {
         String token = loginAndGetToken("alice", "s3cret");
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(token);
-        ResponseEntity<String> response = rest.exchange(
-                url("/getInfoUser"),
-                HttpMethod.GET,
-                new HttpEntity<>(headers),
-                String.class);
+        byte[] bodyBytes = webTestClient.get().uri("/getInfoUser")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.OK)
+                .returnResult(Void.class)
+                .getResponseBodyContent();
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        JsonNode body = mapper.readTree(response.getBody());
+        JsonNode body = mapper.readTree(bodyBytes);
         assertThat(body.get("username").asText()).isEqualTo("alice");
         assertThat(body.get("email").asText()).isEqualTo("alice@example.com");
     }
 
     @Test
     void getInfoUserWithoutTokenReturns401() {
-        ResponseEntity<String> response = rest.exchange(
-                url("/getInfoUser"),
-                HttpMethod.GET,
-                new HttpEntity<>(new HttpHeaders()),
-                String.class);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        webTestClient.get().uri("/getInfoUser")
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
     void googleLoginReturns501() throws Exception {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        ResponseEntity<String> response = rest.exchange(
-                url("/googleLogin"),
-                HttpMethod.POST,
-                new HttpEntity<>("{\"idToken\":\"x\",\"appName\":\"y\"}", headers),
-                String.class);
+        byte[] bodyBytes = webTestClient.post().uri("/googleLogin")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"idToken\":\"x\",\"appName\":\"y\"}")
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.NOT_IMPLEMENTED)
+                .returnResult(Void.class)
+                .getResponseBodyContent();
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_IMPLEMENTED);
-        JsonNode body = mapper.readTree(response.getBody());
+        JsonNode body = mapper.readTree(bodyBytes);
         assertThat(body.get("error").asText()).isEqualTo("google_login_not_configured");
     }
 
@@ -185,21 +205,22 @@ class AuthCenterIntegrationTest {
 
     @Test
     void loginSetsRefreshCookieWithCorrectAttributes() {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        ResponseEntity<String> response = rest.exchange(
-                url("/login"),
-                HttpMethod.POST,
-                new HttpEntity<>("{\"username\":\"alice\",\"password\":\"s3cret\"}", headers),
-                String.class);
+        FluxExchangeResult<Void> result = webTestClient.post().uri("/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"username\":\"alice\",\"password\":\"s3cret\"}")
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.OK)
+                .returnResult(Void.class);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        String setCookie = response.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        String setCookie = result.getResponseHeaders().getFirst(HttpHeaders.SET_COOKIE);
         assertThat(setCookie).isNotNull();
         // Cookie name + scope + flags are the security guarantees the SPA
         // depends on. If any of these change, update the docs.
         assertThat(setCookie).startsWith("sso_refresh=");
-        assertThat(setCookie).contains("Path=/auth");
+        // Path is "/" so the cookie rides both the legacy /auth/refresh
+        // path and the gateway-mounted /api/auth/refresh path; see the
+        // matching comment in JsonLoginFilter.REFRESH_COOKIE_PATH.
+        assertThat(setCookie).contains("Path=/");
         assertThat(setCookie).contains("HttpOnly");
         assertThat(setCookie).contains("SameSite=Strict");
         assertThat(setCookie).contains("Max-Age=2592000"); // 30 days
@@ -211,45 +232,42 @@ class AuthCenterIntegrationTest {
 
     @Test
     void refreshWithoutCookieReturns401() {
-        HttpHeaders headers = new HttpHeaders();
-        ResponseEntity<String> response = rest.exchange(
-                url("/auth/refresh"),
-                HttpMethod.POST,
-                new HttpEntity<>(headers),
-                String.class);
+        byte[] bodyBytes = webTestClient.post().uri("/auth/refresh")
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED)
+                .returnResult(Void.class)
+                .getResponseBodyContent();
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(response.getBody()).contains("no_refresh_cookie");
+        assertThat(new String(bodyBytes, StandardCharsets.UTF_8)).contains("no_refresh_cookie");
     }
 
     @Test
     void refreshWithCookieReturnsNewAccessTokenAndRotatedCookie() throws Exception {
         // First, log in to get a cookie.
-        HttpHeaders loginHeaders = new HttpHeaders();
-        loginHeaders.setContentType(MediaType.APPLICATION_JSON);
-        ResponseEntity<String> loginResp = rest.exchange(
-                url("/login"), HttpMethod.POST,
-                new HttpEntity<>("{\"username\":\"alice\",\"password\":\"s3cret\"}", loginHeaders),
-                String.class);
-        String initialCookie = loginResp.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        FluxExchangeResult<Void> loginResult = webTestClient.post().uri("/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"username\":\"alice\",\"password\":\"s3cret\"}")
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.OK)
+                .returnResult(Void.class);
+        String initialCookie = loginResult.getResponseHeaders().getFirst(HttpHeaders.SET_COOKIE);
         assertThat(initialCookie).isNotNull();
         String initialValue = extractCookieValue(initialCookie);
         assertThat(initialValue).isNotBlank();
 
         // Now call /auth/refresh carrying the cookie.
-        HttpHeaders refreshHeaders = new HttpHeaders();
-        refreshHeaders.add(HttpHeaders.COOKIE, "sso_refresh=" + initialValue);
-        ResponseEntity<String> refreshResp = rest.exchange(
-                url("/auth/refresh"), HttpMethod.POST,
-                new HttpEntity<>(refreshHeaders), String.class);
+        FluxExchangeResult<Void> refreshResult = webTestClient.post().uri("/auth/refresh")
+                .cookie("sso_refresh", initialValue)
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.OK)
+                .returnResult(Void.class);
 
-        assertThat(refreshResp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        JsonNode body = mapper.readTree(refreshResp.getBody());
+        JsonNode body = mapper.readTree(refreshResult.getResponseBodyContent());
         assertThat(body.get("token").asText()).isNotBlank();
         assertThat(body.get("expiresIn").asLong()).isEqualTo(3600L);
 
         // The Set-Cookie header is back with a NEW value (rotation).
-        String newCookie = refreshResp.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        String newCookie = refreshResult.getResponseHeaders().getFirst(HttpHeaders.SET_COOKIE);
         assertThat(newCookie).startsWith("sso_refresh=");
         String newValue = extractCookieValue(newCookie);
         assertThat(newValue).isNotBlank();
@@ -258,18 +276,15 @@ class AuthCenterIntegrationTest {
 
     @Test
     void logoutSetsCookieToMaxAgeZero() {
-        HttpHeaders headers = new HttpHeaders();
-        ResponseEntity<String> response = rest.exchange(
-                url("/auth/logout"),
-                HttpMethod.POST,
-                new HttpEntity<>(headers),
-                String.class);
+        FluxExchangeResult<Void> result = webTestClient.post().uri("/auth/logout")
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.OK)
+                .returnResult(Void.class);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        String setCookie = response.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        String setCookie = result.getResponseHeaders().getFirst(HttpHeaders.SET_COOKIE);
         assertThat(setCookie).startsWith("sso_refresh=");
         assertThat(setCookie).contains("Max-Age=0");
-        assertThat(setCookie).contains("Path=/auth");
+        assertThat(setCookie).contains("Path=/");
         assertThat(setCookie).contains("HttpOnly");
         assertThat(setCookie).contains("SameSite=Strict");
     }
@@ -288,20 +303,15 @@ class AuthCenterIntegrationTest {
         return setCookie.substring(eq + 1, semi);
     }
 
-    private String url(String path) {
-        return "http://localhost:" + port + path;
-    }
-
     private String loginAndGetToken(String username, String password) throws Exception {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        ResponseEntity<String> response = rest.exchange(
-                url("/login"),
-                HttpMethod.POST,
-                new HttpEntity<>(mapper.writeValueAsString(
-                        Map.of("username", username, "password", password)), headers),
-                String.class);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        return mapper.readTree(response.getBody()).get("token").asText();
+        byte[] bodyBytes = webTestClient.post().uri("/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(mapper.writeValueAsString(
+                        Map.of("username", username, "password", password)))
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.OK)
+                .returnResult(Void.class)
+                .getResponseBodyContent();
+        return mapper.readTree(bodyBytes).get("token").asText();
     }
 }

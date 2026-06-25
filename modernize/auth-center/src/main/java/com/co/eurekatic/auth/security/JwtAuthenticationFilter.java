@@ -1,4 +1,4 @@
-package com.co.eurekatic.auth;
+package com.co.eurekatic.auth.security;
 
 import com.co.eurekatic.common.security.AuthPrincipal;
 import com.co.eurekatic.common.security.JwtProperties;

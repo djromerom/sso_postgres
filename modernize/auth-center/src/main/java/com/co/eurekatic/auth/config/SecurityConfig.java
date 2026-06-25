@@ -1,5 +1,8 @@
-package com.co.eurekatic.auth;
+package com.co.eurekatic.auth.config;
 
+import com.co.eurekatic.auth.security.JsonAuthHandlers;
+import com.co.eurekatic.auth.security.JsonLoginFilter;
+import com.co.eurekatic.auth.security.JwtAuthenticationFilter;
 import com.co.eurekatic.common.security.CorsProperties;
 import com.co.eurekatic.common.security.JwtTokenService;
 import com.fasterxml.jackson.databind.ObjectMapper;

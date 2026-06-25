@@ -1,5 +1,6 @@
-package com.co.eurekatic.auth;
+package com.co.eurekatic.auth.init;
 
+import com.co.eurekatic.auth.AuthCenterApplication;
 import com.co.eurekatic.common.entity.Role;
 import com.co.eurekatic.common.entity.User;
 import com.co.eurekatic.common.repository.RoleRepository;

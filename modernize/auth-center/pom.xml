@@ -55,6 +55,29 @@
             <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Required by Spring 7's MockMvcWebTestClient.bindToApplicationContext().
+             Even when bound to an in-process MockMvc, the builder still
+             resolves a WebTestClient instance via WebTestClient.bindToServer,
+             which asserts spring-webflux is on the classpath. We need the
+             reactive WebTestClient API to write the integration tests
+             (TestRestTemplate was removed in Spring Boot 4). Test scope only
+             — the runtime app remains a pure servlet stack. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Required so MockMvcWebTestClient can apply the Spring
+             Security filter chain (otherwise the JsonLoginFilter and
+             JwtAuthenticationFilter are bypassed and the test sees
+             404s where the auth surface should be reachable). -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

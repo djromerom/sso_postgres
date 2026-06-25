@@ -1,4 +1,4 @@
-package com.co.eurekatic.auth;
+package com.co.eurekatic.auth.security;
 
 import com.co.eurekatic.common.dto.AuthDtos.LoginRequest;
 import com.co.eurekatic.common.dto.AuthDtos.TokenResponse;
@@ -126,7 +126,7 @@ public class JsonLoginFilter extends AbstractAuthenticationProcessingFilter {
      * plain HTTP (dev), added when the connection is TLS (prod). SameSite
      * is always Strict because the SPA never needs cross-site auth.
      */
-    static String buildRefreshCookie(String refreshToken, HttpServletRequest request) {
+    public static String buildRefreshCookie(String refreshToken, HttpServletRequest request) {
         boolean secure = request.isSecure();
         StringBuilder sb = new StringBuilder(128);
         sb.append(REFRESH_COOKIE_NAME).append('=').append(refreshToken)
@@ -140,7 +140,7 @@ public class JsonLoginFilter extends AbstractAuthenticationProcessingFilter {
         return sb.toString();
     }
 
-    static final String REFRESH_COOKIE_NAME = "sso_refresh";
+    public static final String REFRESH_COOKIE_NAME = "sso_refresh";
     // Path is "/" (not "/auth") so the cookie is sent on both the
     // legacy /auth/refresh path AND the gateway-mounted
     // /api/auth/refresh path. The browser matches the cookie's path
@@ -150,9 +150,9 @@ public class JsonLoginFilter extends AbstractAuthenticationProcessingFilter {
     // the lack of a cross-site need keep the security posture
     // intact; the path scoping was defense-in-depth that broke when
     // the gateway added an /api prefix.
-    static final String REFRESH_COOKIE_PATH = "/";
+    public static final String REFRESH_COOKIE_PATH = "/";
     /** 30 days. Matches the legacy refresh-token lifetime. */
-    static final int REFRESH_COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
+    public static final int REFRESH_COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
 
     @Override
     protected void unsuccessfulAuthentication(HttpServletRequest request,

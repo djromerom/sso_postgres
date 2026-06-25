@@ -1,4 +1,4 @@
-package com.co.eurekatic.auth;
+package com.co.eurekatic.auth.web;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

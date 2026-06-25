@@ -1,4 +1,4 @@
-package com.co.eurekatic.auth;
+package com.co.eurekatic.auth.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;

@@ -1,4 +1,4 @@
-package com.co.eurekatic.auth;
+package com.co.eurekatic.auth.config;
 
 import com.co.eurekatic.common.security.JwtTokenService;
 import com.co.eurekatic.common.security.JwtProperties;
