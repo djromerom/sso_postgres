@@ -16,7 +16,9 @@ export const userFormSchema = z.object({
     .regex(/^[a-zA-Z0-9._-]+$/, "Solo letras, números, . _ -"),
   fullName: z.string().min(1, "Requerido").max(120),
   email: z.string().email("Email inválido").max(120),
-  password: z.string().min(8, "Mínimo 8 caracteres").max(72).optional(),
+  // No password field. The user picks their password at the
+  // activation landing page (POST /activateAccount); the admin
+  // never sees it. See CreateAccountRequest in src/api/types.ts.
   roleNames: z.array(z.string()).default([]),
 });
 

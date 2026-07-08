@@ -41,19 +41,31 @@ export interface UserResponse {
   roleNames: string[];
 }
 
+/**
+ * Wire shape for {@code POST /sso-admin/createAccount}. The
+ * admin no longer sends a password — the user sets one by
+ * clicking the activation link in the email. The
+ * {@code /activateAccount} endpoint is the only place a
+ * password first enters the system for the new account.
+ */
 export interface CreateAccountRequest {
   username: string;
   fullName: string;
   email: string;
-  password: string;
   roleNames: string[];
 }
 
+/**
+ * Wire shape for {@code PUT /sso-admin/updateAccount}. Password
+ * changes are NOT handled here — see {@code forgotPassword} +
+ * {@code restorePassword} for the user-driven flow. An admin
+ * who needs to reset a forgotten password triggers
+ * {@code GET /forgotPassword?email=…} on behalf of the user.
+ */
 export interface UpdateAccountRequest {
   id: number;
   fullName?: string;
   email?: string;
-  password?: string;
   roleNames?: string[];
 }
 

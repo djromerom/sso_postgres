@@ -7,9 +7,12 @@ import {
   useUpdateUser,
   useUsers,
 } from "@/hooks/useUsers";
-import type { UserResponse } from "@/api/types";
+import type {
+  CreateAccountRequest,
+  UpdateAccountRequest,
+  UserResponse,
+} from "@/api/types";
 import { UserFormDrawer } from "./UserFormDrawer";
-import type { UserFormValues } from "@/schemas";
 
 export function UsersListPage() {
   const users = useUsers();
@@ -19,25 +22,18 @@ export function UsersListPage() {
   const [editing, setEditing] = useState<UserResponse | null>(null);
   const [creating, setCreating] = useState(false);
 
-  async function handleSubmit(values: UserFormValues & { id?: number; password?: string | undefined }) {
-    if (values.id) {
-      await updateUser.mutateAsync({
-        id: values.id,
-        fullName: values.fullName,
-        email: values.email,
-        roleNames: values.roleNames,
-        ...(values.password ? { password: values.password } : {}),
-      });
+  async function handleSubmit(values: CreateAccountRequest | UpdateAccountRequest) {
+    if ("id" in values) {
+      await updateUser.mutateAsync(values);
       toast.show("Usuario actualizado", "success");
     } else {
-      await createUser.mutateAsync({
-        username: values.username,
-        fullName: values.fullName,
-        email: values.email,
-        password: values.password ?? "",
-        roleNames: values.roleNames,
-      });
-      toast.show("Usuario creado", "success");
+      // No password — the user sets theirs at the activation
+      // link in the email we send them.
+      await createUser.mutateAsync(values);
+      toast.show(
+        "Usuario creado. Se le ha enviado un correo para activar la cuenta.",
+        "success",
+      );
     }
     setEditing(null);
     setCreating(false);

@@ -36,16 +36,19 @@ import java.util.stream.Collectors;
  * <p>Side effects:
  * <ul>
  *   <li>{@link #createAccount} — creates a User in the DB
- *       (status: {@code active=true}, {@code enabled=false} until
- *       activation), issues an activation token, sends an
- *       activation email.</li>
+ *       (status: {@code active=true}, {@code enabled=false},
+ *       {@code password=null} until activation), issues an
+ *       activation token, publishes an activation email event.</li>
  *   <li>{@link #activateAccount} — clears the activation token,
  *       sets {@code enabled=true} and {@code active=true},
- *       BCrypt-encodes the new password.</li>
+ *       BCrypt-encodes the new password the user typed on the
+ *       activation landing page. This is the FIRST place a
+ *       password enters the system for that account.</li>
  *   <li>{@link #forgotPassword} — issues a restore token and
- *       sends a restore-password email. Always returns silently
- *       even if the email is unknown, to avoid leaking which
- *       addresses are registered.</li>
+ *       publishes a restore-password email event. Always returns
+ *       silently even if the email is unknown, to avoid leaking
+ *       which addresses are registered. The user types a new
+ *       password at {@code POST /restorePassword}.</li>
  * </ul>
  */
 @Service
@@ -84,9 +87,19 @@ public class UserAdminService {
 
     /**
      * Creates a new user. The user is created in
-     * {@code active=true} but {@code enabled=false} state — they
-     * have to click the activation link in the email before they
-     * can log in. (This mirrors the legacy flow.)
+     * {@code active=true} but {@code enabled=false} state with
+     * no password yet — they have to click the activation link
+     * in the email and POST {@code /activateAccount} with their
+     * chosen password before they can log in.
+     *
+     * <p>The admin no longer types a password on creation; the
+     * first password the system sees for the account is the one
+     * the user enters on the activation landing page. This
+     * mirrors the modern "password-set-by-owner" pattern and
+     * removes a leak vector (an admin with the create-account
+     * role previously knew the initial password of every
+     * account and that password was overwritten on activation
+     * anyway).
      */
     @Transactional
     public UserResponse createAccount(CreateAccountRequest req) {
@@ -96,15 +109,13 @@ public class UserAdminService {
         if (req.email() == null || !EMAIL_REGEX.matcher(req.email()).matches()) {
             throw new EmailInvalidException(req.email());
         }
-        if (req.passwordConfirm() != null && !req.password().equals(req.passwordConfirm())) {
-            throw new IllegalArgumentException("Passwords do not match");
-        }
 
         User user = new User();
         user.setUsername(req.username());
         user.setFullName(req.fullName());
         user.setEmail(req.email());
-        user.setPassword(passwordEncoder.encode(req.password()));
+        // No passwordEncoder here — the password column is left
+        // null until /activateAccount BCrypts and stamps it.
         user.setActive(true);
         user.setEnabled(false);
         user.setLdap(false);

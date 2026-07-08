@@ -224,12 +224,13 @@ class SsoAdminIntegrationTest {
     @Test
     void createAccountPersistsUserWithDisabledFlagAndSendsEmail() throws Exception {
         String token = tokenFor("root", "ADMIN");
+        // Admin no longer types a password on create — the user
+        // sets one by clicking the activation link. The wire body
+        // shrinks to {fullName, username, email, roleNames}.
         String body = mapper.writeValueAsString(Map.of(
                 "fullName", "Alice Example",
                 "username", "alice",
                 "email", "alice@example.com",
-                "password", "s3cret",
-                "passwordConfirm", "s3cret",
                 "roleNames", List.of("ADMIN")
         ));
 
@@ -250,9 +251,8 @@ class SsoAdminIntegrationTest {
         // Until the activation link is clicked, the user cannot log in.
         assertThat(stored.isEnabled()).isFalse();
         assertThat(stored.getTokenActivation()).isNotBlank();
-        // Password was BCrypted, not stored as plaintext.
-        assertThat(stored.getPassword()).isNotEqualTo("s3cret");
-        assertThat(passwordEncoder.matches("s3cret", stored.getPassword())).isTrue();
+        // No password yet — the user sets one at /activateAccount.
+        assertThat(stored.getPassword()).isNull();
 
         // Wire-2: createAccount publishes the activation event via
         // NotificationEventPublisher → notification-service renders
@@ -275,8 +275,7 @@ class SsoAdminIntegrationTest {
         String body = mapper.writeValueAsString(Map.of(
                 "fullName", "Another Root",
                 "username", "root",
-                "email", "other@example.com",
-                "password", "s3cret"
+                "email", "other@example.com"
         ));
 
         client.post().uri("/createAccount")
@@ -296,8 +295,7 @@ class SsoAdminIntegrationTest {
         String body = mapper.writeValueAsString(Map.of(
                 "fullName", "Bad Email",
                 "username", "badmail",
-                "email", "not-an-email",
-                "password", "s3cret"
+                "email", "not-an-email"
         ));
 
         client.post().uri("/createAccount")
@@ -310,12 +308,13 @@ class SsoAdminIntegrationTest {
 
     @Test
     void activateAccountEnablesUserWithoutAuth() throws Exception {
-        // First, create a user — capture the activation token via the
-        // mock EmailService argument.
+        // First, create a user — capture the activation token via
+        // the user row (tokenActivation column).
         String token = tokenFor("root", "ADMIN");
+        // Wire body has NO password — admin doesn't set it; the
+        // user does, in the activation call below.
         String body = mapper.writeValueAsString(Map.of(
-                "fullName", "Bob", "username", "bob", "email", "bob@example.com",
-                "password", "s3cret"));
+                "fullName", "Bob", "username", "bob", "email", "bob@example.com"));
         client.post().uri("/createAccount")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)

@@ -89,8 +89,7 @@ class UserAdminServiceTest {
         when(userRepository.existsByUsername("alice")).thenReturn(true);
 
         CreateAccountRequest req = new CreateAccountRequest(
-                "Alice", "alice", "alice@example.com",
-                "password", null, List.of());
+                "Alice", "alice", "alice@example.com", List.of());
 
         assertThatThrownBy(() -> service.createAccount(req))
                 .isInstanceOf(UserDuplicateException.class)
@@ -103,30 +102,15 @@ class UserAdminServiceTest {
         when(userRepository.existsByUsername("alice")).thenReturn(false);
 
         CreateAccountRequest req = new CreateAccountRequest(
-                "Alice", "alice", "not-an-email",
-                "password", null, List.of());
+                "Alice", "alice", "not-an-email", List.of());
 
         assertThatThrownBy(() -> service.createAccount(req))
                 .isInstanceOf(EmailInvalidException.class);
     }
 
     @Test
-    void createAccountRejectsMismatchedPasswordConfirm() {
-        when(userRepository.existsByUsername("alice")).thenReturn(false);
-
-        CreateAccountRequest req = new CreateAccountRequest(
-                "Alice", "alice", "alice@example.com",
-                "password", "DIFFERENT", List.of());
-
-        assertThatThrownBy(() -> service.createAccount(req))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("match");
-    }
-
-    @Test
     void createAccountSucceedsAndSendsActivationEmail() {
         when(userRepository.existsByUsername("alice")).thenReturn(false);
-        when(passwordEncoder.encode("password")).thenReturn("$2a$10$hashed");
         when(tokenService.issueActivationToken(any(User.class))).thenReturn("tok-123");
         when(userRepository.save(any(User.class))).thenAnswer(inv -> {
             User u = inv.getArgument(0);
@@ -135,8 +119,7 @@ class UserAdminServiceTest {
         });
 
         CreateAccountRequest req = new CreateAccountRequest(
-                "Alice Example", "alice", "alice@example.com",
-                "password", "password", List.of("ADMIN"));
+                "Alice Example", "alice", "alice@example.com", List.of("ADMIN"));
 
         when(roleRepository.findByName("ADMIN")).thenReturn(Optional.of(adminRole));
 
@@ -145,6 +128,12 @@ class UserAdminServiceTest {
         assertThat(resp.id()).isEqualTo(7L);
         assertThat(resp.username()).isEqualTo("alice");
         assertThat(resp.roleNames()).containsExactly("ADMIN");
+
+        // createAccount does NOT encode a password — that's
+        // activateAccount's job. Encoding here would be a leak
+        // of the admin's eventual obligation onto a code path
+        // that shouldn't be touching the encoder at all.
+        verify(passwordEncoder, never()).encode(anyString());
 
         // Token must be issued exactly once, and the activation
         // event is published via NotificationEventPublisher
@@ -163,13 +152,11 @@ class UserAdminServiceTest {
     @Test
     void createAccountSkipsRoleLookupWhenRoleListEmpty() {
         when(userRepository.existsByUsername("alice")).thenReturn(false);
-        when(passwordEncoder.encode(anyString())).thenReturn("h");
         when(tokenService.issueActivationToken(any())).thenReturn("tok");
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         CreateAccountRequest req = new CreateAccountRequest(
-                "Alice", "alice", "alice@example.com",
-                "password", null, List.of());
+                "Alice", "alice", "alice@example.com", List.of());
 
         UserResponse resp = service.createAccount(req);
 
@@ -178,19 +165,33 @@ class UserAdminServiceTest {
     }
 
     @Test
-    void createAccountSkipsEmailCheckWhenPasswordConfirmNull() {
-        // passwordConfirm is null — only the @NotBlank on password matters.
+    void createAccountLeavesPasswordNullUntilActivation() {
+        // The user.password column is intentionally null right
+        // after createAccount — activation (POST /activateAccount
+        // → UserAdminService.activateAccount) is the only path
+        // that ever BCrypts and stamps it. Pin the behaviour so
+        // no future refactor quietly re-adds an admin-typed
+        // password.
         when(userRepository.existsByUsername("alice")).thenReturn(false);
-        when(passwordEncoder.encode(anyString())).thenReturn("h");
         when(tokenService.issueActivationToken(any())).thenReturn("tok");
-        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(userRepository.save(any())).thenAnswer(inv -> {
+            User u = inv.getArgument(0);
+            u.setId(7L);
+            return u;
+        });
 
         CreateAccountRequest req = new CreateAccountRequest(
-                "Alice", "alice", "alice@example.com",
-                "password", null, List.of());
+                "Alice", "alice", "alice@example.com", List.of());
 
-        UserResponse resp = service.createAccount(req);
-        assertThat(resp.username()).isEqualTo("alice");
+        service.createAccount(req);
+
+        // Capture the entity that createAccount was about to save
+        // and assert the password column was left null.
+        org.mockito.ArgumentCaptor<User> saved =
+                org.mockito.ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(saved.capture());
+        assertThat(saved.getValue().getPassword()).isNull();
+        verify(passwordEncoder, never()).encode(anyString());
     }
 
     /* ====================== updateAccount ====================== */
