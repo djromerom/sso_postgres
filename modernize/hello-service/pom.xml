@@ -49,6 +49,17 @@
             and the network path is locked down. The gateway is the
             trust boundary.
         -->
+
+        <!-- @WebFluxTest moved out of spring-boot-test-autoconfigure
+             and into its own artifact in Spring Boot 4 (now
+             org.springframework.boot.webflux.test.autoconfigure.WebFluxTest).
+             spring-boot-starter-test (inherited from the parent pom)
+             no longer pulls it in transitively. Test scope only. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-webflux-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
