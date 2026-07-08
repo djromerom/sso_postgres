@@ -23,14 +23,18 @@ public class AppUserDetailsService implements UserDetailsService {
     }
 
     @Override
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User u = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
+    public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
+        // The parameter is named "username" only because the
+        // UserDetailsService interface mandates that name. We treat
+        // it as an email (the unique login identifier since the
+        // V12 migration).
+        User u = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
         // isEnabled() returns enabled && active. Reject disabled or
         // not-yet-activated accounts here so they cannot log in even if
         // they have a valid password.
         if (!u.isEnabled()) {
-            throw new UsernameNotFoundException("User is disabled: " + username);
+            throw new UsernameNotFoundException("User is disabled: " + email);
         }
         return u;
     }

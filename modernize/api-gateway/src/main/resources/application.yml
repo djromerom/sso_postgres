@@ -38,6 +38,19 @@ spring:
           # registered with Eureka, lowercased service id as the path.
           # Static routes take precedence when ids collide.
           routes:
+            # Bare root "/" → 302 redirect to the admin SPA. Without
+            # this, hitting http://localhost:8080/ falls through to
+            # deny-by-default and returns a raw 401 error page. The SPA
+            # is served at /admin/** (AdminUiGlobalFilter); once it
+            # loads, RequireAuth client-side-redirects to the login
+            # form. The `uri` is a required placeholder — RedirectTo
+            # short-circuits the exchange before any forwarding.
+            - id: root-redirect
+              uri: "no://op"
+              predicates:
+                - Path=/
+              filters:
+                - RedirectTo=302, /admin/
             - id: auth-center
               uri: lb://auth-center
               predicates:
@@ -48,7 +61,27 @@ spring:
             - id: auth-center-info
               uri: lb://auth-center
               predicates:
-                - Path=/login,/getToken,/getApiToken,/getInfoUser,/getUsersSSO,/googleLogin
+                # /getUsersSSO discloses usernames + emails + full names
+                # of every active user. Auth gating lives at the
+                # WebFlux SecurityConfig layer (commits 11 + 12):
+                # `.pathMatchers("/getUsersSSO").hasAuthority("ADMIN")`
+                # rejects anonymous callers BEFORE route forwarding
+                # happens. The route entry stays so ADMIN callers can
+                # actually reach auth-center; the security check is
+                # upstream of the route forwarder. Removing the entry
+                # here would 404 legitimate ADMIN traffic, so this
+                # route is auth-gated, NOT route-removed.
+                #
+                # /getToken was removed from this predicate in this
+                # branch (commits 17-19): the controller method is
+                # gone, the SecurityConfig permit-all entries on
+                # both layers are gone. An anonymous /getToken
+                # request hits anyExchange().authenticated() at the
+                # gateway and gets 401 before any forwarding; an
+                # authenticated /getToken has no controller left
+                # and would have been a 404 anyway, so there is
+                # nothing to forward.
+                - Path=/login,/getApiToken,/getInfoUser,/getUsersSSO,/googleLogin
               filters:
                 - AddResponseHeader=X-Source, api-gateway
             # /api/** surface for the admin-ui SPA (VITE_API_BASE=/api).
@@ -141,6 +174,40 @@ spring:
               filters:
                 - StripPrefix=1
                 - AddResponseHeader=X-Source, api-gateway
+            # query-service is dynamic: each backing
+            # datasource has its own container registered
+            # with Eureka under query-service-<dialect> or
+            # query-service-<custom-instance-name>. The
+            # auto-discovery locator (see discovery.locator
+            # below) auto-creates a route per service-id,
+            # lowercased. So:
+            #
+            #   /query-service-postgres/**          ->
+            #       query-service-postgres/{path}
+            #   /query-service-oracle/**            ->
+            #       query-service-oracle/{path}
+            #   /query-service-postgres-analytics/** ->
+            #       query-service-postgres-analytics/{path}
+            #
+            # We add a static legacy alias so existing
+            # callers (which hit /qs/** in the legacy
+            # sso-service URL surface) keep working — it
+            # forwards to the canonical postgres instance.
+            # StripPrefix=1 removes /qs before forwarding.
+            - id: query-service-legacy-alias
+              uri: lb://query-service-postgres
+              predicates:
+                - Path=/qs/**
+              filters:
+                - StripPrefix=1
+                - AddResponseHeader=X-Source, api-gateway
+            - id: api-query-service
+              uri: lb://query-service-postgres
+              predicates:
+                - Path=/api/qs/**
+              filters:
+                - StripPrefix=2
+                - AddResponseHeader=X-Source, api-gateway
           # 404 for unmatched paths (deny-by-default). The reactive
           # filter will translate this to a 401 for paths that need auth.
           default-filters:
@@ -188,12 +255,42 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,gateway
+        include: health,info,gateway,prometheus
   endpoint:
     health:
       probes:
         enabled: true
       show-details: never
+
+  # ---------------------------------------------------------------------------
+  # Observability — pure OTLP. Metrics, traces and logs are all pushed
+  # to the Grafana Alloy collector; there is no /actuator/prometheus
+  # scrape endpoint. Alloy fans out to Mimir / Tempo / Loki.
+  #
+  # The endpoint defaults to the OTEL_EXPORTER_OTLP_ENDPOINT env var
+  # (set to http://alloy:4318 in docker-compose), falling back to
+  # localhost:4318 for a developer running Alloy on the host.
+  # ---------------------------------------------------------------------------
+  otlp:
+    metrics:
+      export:
+        url: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/metrics
+        step: 10s
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
+    logging:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/logs
+  tracing:
+    sampling:
+      # 100% in dev so every request shows a trace. Lower to e.g. 0.1
+      # in production to cap trace volume.
+      probability: ${OTEL_TRACING_SAMPLE_RATE:1.0}
+  # Resource attributes attached to every metric/trace/log so Grafana
+  # can group by service. service.name comes from spring.application.name.
+  opentelemetry:
+    resource-attributes:
+      service.namespace: sso
+      deployment.environment: ${DEPLOY_ENV:dev}
 
 logging:
   level:

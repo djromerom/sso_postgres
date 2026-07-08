@@ -49,7 +49,7 @@ describe("AuthProvider", () => {
         <div
           data-testid="probe"
           data-status={auth.status}
-          data-username={auth.user?.username ?? ""}
+          data-email={auth.user?.email ?? ""}
           data-error={auth.error ?? ""}
           data-token={auth.getAccessToken() ?? ""}
         />
@@ -66,7 +66,7 @@ describe("AuthProvider", () => {
       const el = utils.getByTestId("probe");
       return {
         status: el.dataset.status as "loading" | "authenticated" | "unauthenticated",
-        username: el.dataset.username ?? "",
+        email: el.dataset.email ?? "",
         error: el.dataset.error ?? "",
         token: el.dataset.token ?? "",
       };
@@ -125,7 +125,7 @@ describe("AuthProvider", () => {
     expect(ok).toBe(true);
     await waitForStatus("authenticated");
     expect(snapshot().token).toBe("login-tok");
-    expect(snapshot().username).toBe("admin");
+    expect(snapshot().email).toBe("admin");
   });
 
   it("login() surfaces the server error and stays unauthenticated", async () => {
@@ -179,6 +179,6 @@ describe("AuthProvider", () => {
     });
     expect(snapshot().status).toBe("unauthenticated");
     expect(snapshot().token).toBe("");
-    expect(snapshot().username).toBe("");
+    expect(snapshot().email).toBe("");
   });
 });

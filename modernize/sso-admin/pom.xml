@@ -56,6 +56,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- Prometheus scrape endpoint. Version resolved by Boot 4 BOM. Exposed via /actuator/prometheus for the Grafana Alloy scraper. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
 
         <!-- Mail + Freemarker for activation and restore-password
              emails. SMTP creds come from env vars (sso.mail.*) —
@@ -67,6 +72,35 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-freemarker</artifactId>
+        </dependency>
+
+        <!-- AMQP producer. Publishes notification events to the
+             notifications topic exchange (consumed by
+             notification-service). Connection details come from
+             spring.rabbitmq.* in application.yml; for container
+             runs the docker-compose env block points at the
+             rabbitmq service. We use Spring AMQP's
+             RabbitTemplate + Jackson2JsonMessageConverter
+             (declared in NotificationsConfig). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+        <!--
+            Spring Boot 4.0 split autoconfigure per-stack. AMQP
+            (RabbitMQ connection factory + RabbitTemplate autoconfig)
+            moved out of spring-boot-autoconfigure into this
+            dedicated jar. Without it, `spring.rabbitmq.*`
+            config is ignored, the CachingConnectionFactory
+            is never created, and `RabbitTemplate` bean
+            registration fails — even though the starter
+            dependency is satisfied. Same split was applied
+            to Flyway, JDBC, and Hibernate (see notif-service
+            and memory note `spring-boot-4-package-moves.md`).
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-amqp</artifactId>
         </dependency>
 
         <!-- Spring Security 6 (servlet stack, not reactive). The

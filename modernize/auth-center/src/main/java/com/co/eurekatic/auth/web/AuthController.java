@@ -1,5 +1,6 @@
 package com.co.eurekatic.auth.web;
 
+import com.co.eurekatic.auth.security.EffectiveRolesResolver;
 import com.co.eurekatic.common.dto.AuthDtos.UserSummary;
 import com.co.eurekatic.common.entity.Role;
 import com.co.eurekatic.common.entity.User;
@@ -31,41 +32,32 @@ public class AuthController {
 
     private final UserRepository userRepository;
     private final JwtTokenService jwt;
+    private final EffectiveRolesResolver effectiveRoles;
 
-    public AuthController(UserRepository userRepository, JwtTokenService jwt) {
+    public AuthController(UserRepository userRepository, JwtTokenService jwt,
+                           EffectiveRolesResolver effectiveRoles) {
         this.userRepository = userRepository;
         this.jwt = jwt;
-    }
-
-    /**
-     * Returns a fresh access token for the bearer of the supplied
-     * refresh token. The refresh token is currently a UUID; for the MVP
-     * we accept any non-empty string and issue a new access token for
-     * the user identified by the {@code Authorization} header. A real
-     * implementation would verify the refresh token against a stored
-     * value, rotate it, and revoke the old one.
-     */
-    @GetMapping("/getToken")
-    public ResponseEntity<?> getToken(
-            @RequestParam("refreshToken") String refreshToken,
-            Authentication authentication) {
-        if (refreshToken == null || refreshToken.isBlank()) {
-            throw new AccessDeniedException("Missing refreshToken");
-        }
-        String username = principalName(authentication);
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException(username));
-        Set<String> roles = roleNames(user);
-        return ResponseEntity.ok(new com.co.eurekatic.common.dto.AuthDtos.TokenResponse(
-                jwt.issueAccessToken(username, roles),
-                refreshToken,
-                3_600L));
+        this.effectiveRoles = effectiveRoles;
     }
 
     /**
      * Service-to-service login. The {@code apiToken} is a long-lived
      * credential bound to a user; on success we issue an access token
      * marked {@code typ=api}.
+     *
+     * <p><b>About a previous endpoint that lived here:</b> {@code GET
+     * /getToken?refreshToken=…} was an MVP placeholder that accepted
+     * any non-empty {@code refreshToken} and re-issued an access token
+     * for the bearer of the {@code Authorization} header. The
+     * {@code refreshToken} parameter was decorative — it was neither
+     * validated against any store nor rotated. Removal motivation is
+     * documented in the security note in the project README.
+     * Clients that actually need to rotate a refresh token use
+     * {@code POST /api/auth/refresh} (or {@code POST /auth/refresh}
+     * via the api-gateway), which is backed by
+     * {@code RefreshTokenStore.rotate} with full RFC 9700 §4.14
+     * family revocation.
      */
     @GetMapping("/getApiToken")
     public ResponseEntity<?> getApiToken(@RequestParam("apiToken") String apiToken) {
@@ -74,9 +66,9 @@ public class AuthController {
         if (!user.isEnabled()) {
             throw new AccessDeniedException("User is disabled");
         }
-        Set<String> roles = roleNames(user);
+        Set<String> roles = effectiveRoles.forEmail(user.getEmail());
         return ResponseEntity.ok(new com.co.eurekatic.common.dto.AuthDtos.TokenResponse(
-                jwt.issueApiToken(user.getUsername(), roles),
+                jwt.issueApiToken(user.getEmail(), roles),
                 user.getApiToken(),
                 86_400L));
     }
@@ -88,9 +80,9 @@ public class AuthController {
      */
     @GetMapping("/getInfoUser")
     public ResponseEntity<UserSummary> getInfoUser(Authentication authentication) {
-        String username = principalName(authentication);
-        User u = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException(username));
+        String email = principalName(authentication);
+        User u = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException(email));
         return ResponseEntity.ok(toSummary(u));
     }
 
@@ -111,17 +103,18 @@ public class AuthController {
     /* ====================== helpers ====================== */
 
     /**
-     * Pulls the username off the {@link Authentication} regardless of
+     * Pulls the email off the {@link Authentication} regardless of
      * whether the principal is a {@link User} entity (login flow) or
-     * an {@link AuthPrincipal} record (token-bearer flow).
+     * an {@link AuthPrincipal} record (token-bearer flow). Email is
+     * the unique login identifier since the V12 migration.
      */
     private String principalName(Authentication authentication) {
         if (authentication == null || authentication.getPrincipal() == null) {
             throw new AccessDeniedException("Missing authentication");
         }
         Object p = authentication.getPrincipal();
-        if (p instanceof User u) return u.getUsername();
-        if (p instanceof AuthPrincipal ap) return ap.username();
+        if (p instanceof User u) return u.getEmail();
+        if (p instanceof AuthPrincipal ap) return ap.email();
         return authentication.getName();
     }
 
@@ -131,10 +124,17 @@ public class AuthController {
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
+    /**
+     * {@link UserSummary#roles()} intentionally still reflects only
+     * the user's DIRECT roles (via {@link #roleNames(User)}), not
+     * the group-effective set — this summary is a profile view, not
+     * a token-issuing path, so it's left as-is. The
+     * {@code username} slot was removed in the V12 migration; email
+     * IS the unique login identifier.
+     */
     private UserSummary toSummary(User u) {
         return new UserSummary(
                 u.getId(),
-                u.getUsername(),
                 u.getEmail(),
                 u.getFullName(),
                 u.isEnabled(),

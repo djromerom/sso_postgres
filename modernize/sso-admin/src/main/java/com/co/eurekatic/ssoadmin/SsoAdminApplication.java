@@ -1,6 +1,7 @@
 package com.co.eurekatic.ssoadmin;
 
 import com.co.eurekatic.common.security.JwtProperties;
+import com.co.eurekatic.ssoadmin.provisioner.ProvisionerClientConfig;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -43,7 +44,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 })
 @EntityScan(basePackages = "com.co.eurekatic.common.entity")
 @EnableJpaRepositories(basePackages = "com.co.eurekatic.common.repository")
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({JwtProperties.class, ProvisionerClientConfig.class})
 public class SsoAdminApplication {
 
     public static void main(String[] args) {

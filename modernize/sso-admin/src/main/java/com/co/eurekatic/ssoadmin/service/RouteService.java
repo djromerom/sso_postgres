@@ -35,7 +35,8 @@ public class RouteService {
     private final RouteRepository routeRepo;
     private final RoleRepository roleRepo;
 
-    public RouteService(RouteRepository routeRepo, RoleRepository roleRepo) {
+    public RouteService(RouteRepository routeRepo,
+                        RoleRepository roleRepo) {
         this.routeRepo = routeRepo;
         this.roleRepo = roleRepo;
     }
@@ -143,7 +144,7 @@ public class RouteService {
 
     /* ------------- internals ------------- */
 
-    private static void copy(RouteRequest req, Route r) {
+    private void copy(RouteRequest req, Route r) {
         r.setName(req.name());
         r.setIcon(req.icon());
         r.setPath(req.path());

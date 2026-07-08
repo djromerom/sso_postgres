@@ -39,21 +39,26 @@ export class ApiClient {
    * GET helper. Returns parsed JSON; throws {@link ApiError} on
    * non-2xx. Pass `true` for {@code skipAuth} on the refresh
    * endpoint itself, to avoid the recursive 401 loop.
+   *
+   * Pass `base: ""` for cross-service calls that bypass the
+   * {@code /api} prefix — used by the Queries Catalog page to
+   * hit {@code /<serviceId>/query} directly via the gateway's
+   * dynamic discovery locator.
    */
-  async get<T>(path: string, init?: { skipAuth?: boolean }): Promise<T> {
+  async get<T>(path: string, init?: { skipAuth?: boolean; base?: string | null }): Promise<T> {
     return this.request<T>("GET", path, undefined, init);
   }
 
-  async post<T>(path: string, body?: unknown, init?: { skipAuth?: boolean }): Promise<T> {
+  async post<T>(path: string, body?: unknown, init?: { skipAuth?: boolean; base?: string | null }): Promise<T> {
     return this.request<T>("POST", path, body, init);
   }
 
-  async put<T>(path: string, body?: unknown): Promise<T> {
-    return this.request<T>("PUT", path, body);
+  async put<T>(path: string, body?: unknown, init?: { skipAuth?: boolean; base?: string | null }): Promise<T> {
+    return this.request<T>("PUT", path, body, init);
   }
 
-  async delete<T>(path: string): Promise<T> {
-    return this.request<T>("DELETE", path, undefined);
+  async delete<T>(path: string, init?: { skipAuth?: boolean; base?: string | null }): Promise<T> {
+    return this.request<T>("DELETE", path, undefined, init);
   }
 
   /**
@@ -64,9 +69,9 @@ export class ApiClient {
     method: string,
     path: string,
     body?: unknown,
-    init?: { skipAuth?: boolean },
+    init?: { skipAuth?: boolean; base?: string | null },
   ): Promise<T> {
-    const resp = await this.fetchOnce(method, path, body, init?.skipAuth);
+    const resp = await this.fetchOnce(method, path, body, init?.skipAuth, init?.base);
     if (resp.status !== 401 || init?.skipAuth) {
       return this.handleResponse<T>(resp);
     }
@@ -76,7 +81,7 @@ export class ApiClient {
       this.onAuthFailure();
       throw new ApiError(401, "AUTH_EXPIRED", "Session expired; please log in again");
     }
-    const retried = await this.fetchOnce(method, path, body, init?.skipAuth);
+    const retried = await this.fetchOnce(method, path, body, init?.skipAuth, init?.base);
     return this.handleResponse<T>(retried);
   }
 
@@ -85,6 +90,7 @@ export class ApiClient {
     path: string,
     body?: unknown,
     skipAuth = false,
+    base: string | null = null,
   ): Promise<Response> {
     const headers: Record<string, string> = {
       Accept: "application/json",
@@ -108,7 +114,12 @@ export class ApiClient {
     if (body !== undefined) {
       init.body = JSON.stringify(body);
     }
-    return fetch(`${env.VITE_API_BASE}${path}`, init);
+    // `base === null` → use VITE_API_BASE (the default for every
+    // existing call). `base === ""` → skip the prefix entirely;
+    // used by the Queries Catalog page to hit gateway dynamic
+    // routes like /query-service-<x>/query directly.
+    const prefix = base === null ? env.VITE_API_BASE : base;
+    return fetch(`${prefix}${path}`, init);
   }
 
   private async handleResponse<T>(resp: Response): Promise<T> {

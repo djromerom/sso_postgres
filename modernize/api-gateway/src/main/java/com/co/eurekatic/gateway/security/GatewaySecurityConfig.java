@@ -19,6 +19,7 @@ import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.authentication.HttpStatusServerEntryPoint;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
+import org.springframework.web.cors.reactive.CorsWebFilter;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
@@ -30,6 +31,19 @@ import java.util.List;
  * <ul>
  *   <li>{@code /actuator/health}, {@code /actuator/health/**}, {@code /actuator/info}</li>
  *   <li>{@code OPTIONS /**} (CORS preflight)</li>
+ * </ul>
+ *
+ * <p>Paths that require authentication with a specific role:
+ * <ul>
+ *   <li>{@code /getUsersSSO} — requires {@code ADMIN}. Anonymous
+ *       callers cannot see user enumeration (the default would
+ *       otherwise reach auth-center through the gateway with no
+ *       credentials). Uses {@code hasAuthority} not {@code hasRole}
+ *       for the same reason as auth-center: {@link
+ *       ReactiveJwtAuthenticationFilter} stores role names WITHOUT
+ *       the {@code ROLE_} prefix. Defense-in-depth: even though
+ *       auth-center re-checks the role after the gateway forwards,
+ *       rejecting here keeps the request off the wire.</li>
  * </ul>
  *
  * <p>All other paths require a valid Bearer token, validated by
@@ -59,14 +73,17 @@ public class GatewaySecurityConfig {
 
         return http
                 .csrf(csrf -> csrf.disable())
-                // CORS is handled by the auto-configured CorsWebFilter
-                // created from the corsConfigurationSource() bean below.
-                // Calling .cors() here would also work in theory, but
-                // the inline call evaluated a fresh source at filter-
-                // chain build time that doesn't reflect bean lifecycle
-                // changes, leading to 403 "Invalid CORS request" on
-                // every Origin-bearing request. Letting the global
-                // CorsWebFilter own CORS avoids that race.
+                // CORS: the explicit CorsWebFilter bean below is the
+                // single source of truth. On Spring Cloud Gateway 5.0.2
+                // with Spring Security 6.5, calling .cors() in the
+                // security chain on top of the global CorsWebFilter
+                // causes a double-check race — the global filter
+                // approves (Allow-Origin set), then the chain's
+                // internal pre-check rejects with 403 "Invalid CORS
+                // request". We disable the chain-level CORS handler
+                // here and rely on the explicit bean. The chain still
+                // authorizes the request — the CORS gate is the
+                // bean-level filter that runs first.
                 .formLogin(form -> form.disable())
                 .httpBasic(basic -> basic.disable())
                 .logout(logout -> logout.disable())
@@ -74,13 +91,34 @@ public class GatewaySecurityConfig {
                         new HttpStatusServerEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .authorizeExchange(a -> a
                         .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // Bare root "/" is permitted so the root-redirect
+                        // gateway route (see application.yml) can 302 the
+                        // user to /admin/ instead of the security chain
+                        // 401-ing them before the redirect runs.
+                        .pathMatchers("/").permitAll()
                         .pathMatchers("/admin", "/admin/**").permitAll()
                         // Auth flow: the user has no Bearer token at this
                         // point, so the gateway must let these through
                         // unauthenticated. auth-center enforces its own
                         // auth on business endpoints.
-                        .pathMatchers("/login", "/getToken", "/getApiToken",
-                                "/getInfoUser", "/getUsersSSO", "/googleLogin").permitAll()
+                        //
+                        // /getToken removed in this branch (was an MVP
+                        // placeholder whose refreshToken param was
+                        // decorative). Without this matcher, an
+                        // anonymous /getToken falls through to
+                        // anyExchange().authenticated() and gets a 401
+                        // at the gateway boundary (defense-in-depth
+                        // vs auth-center's servlet-side 401).
+                        .pathMatchers("/login", "/getApiToken",
+                                "/getInfoUser", "/googleLogin").permitAll()
+                        // /getUsersSSO discloses usernames + emails + full
+                        // names of every active user. Reject unauthenticated
+                        // callers at the gateway boundary BEFORE the
+                        // request leaves for auth-center. JWT roles on the
+                        // reactive SecurityContext are bare role names
+                        // (no ROLE_ prefix), so hasAuthority("ADMIN") is
+                        // the correct check.
+                        .pathMatchers("/getUsersSSO").hasAuthority("ADMIN")
                         .pathMatchers("/auth/refresh", "/auth/logout").permitAll()
                         // /api/** surface for the admin-ui SPA. The auth
                         // flow paths mirror the legacy ones above (the
@@ -93,19 +131,21 @@ public class GatewaySecurityConfig {
                         .pathMatchers("/api/auth/login").permitAll()
                         .pathMatchers("/api/auth/refresh", "/api/auth/logout").permitAll()
                         .pathMatchers("/actuator/health", "/actuator/health/**",
-                                "/actuator/info").permitAll()
+                                "/actuator/info", "/actuator/prometheus").permitAll()
                         .anyExchange().authenticated())
                 .addFilterAt(jwtFilter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .build();
     }
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        // Defaults are dev-friendly. Production wires CorsProperties via
-        // the application.yml property sso.cors.allowed-origins (list of
-        // hostnames). The WebFlux security config above doesn't accept
-        // a CorsProperties directly — we read it from the environment
-        // here so the same allowlist applies.
+    public CorsWebFilter corsWebFilter() {
+        // The single CORS handler. By NOT exposing a
+        // CorsConfigurationSource @Bean we keep the auto-configured
+        // global CorsWebFilter out of the chain (Spring's
+        // CorsAutoConfiguration only wires one when a source bean
+        // exists). The .cors() call in securityWebFilterChain is
+        // intentionally absent for the same reason — having both
+        // produces the 403 race described above.
         CorsProperties props = bindCorsProperties();
         log.info("CORS allowedOrigins={}", props.allowedOrigins());
         CorsConfiguration cfg = new CorsConfiguration();
@@ -118,7 +158,7 @@ public class GatewaySecurityConfig {
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", cfg);
-        return source;
+        return new CorsWebFilter(source);
     }
 
     /**

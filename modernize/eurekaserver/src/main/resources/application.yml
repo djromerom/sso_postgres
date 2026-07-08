@@ -27,8 +27,10 @@ management:
   endpoints:
     web:
       exposure:
-        # Lock down to health/info only — never expose /env, /heapdump, etc.
-        include: health,info
+        # Lock down to health/info/prometheus only — never expose
+        # /env, /heapdump, etc. /actuator/prometheus is read by the
+        # Grafana Alloy scraper over the internal docker network.
+        include: health,info,prometheus
   endpoint:
     health:
       probes:

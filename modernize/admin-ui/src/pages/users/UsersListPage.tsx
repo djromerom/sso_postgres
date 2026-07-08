@@ -7,9 +7,12 @@ import {
   useUpdateUser,
   useUsers,
 } from "@/hooks/useUsers";
-import type { UserResponse } from "@/api/types";
+import type {
+  CreateAccountRequest,
+  UpdateAccountRequest,
+  UserResponse,
+} from "@/api/types";
 import { UserFormDrawer } from "./UserFormDrawer";
-import type { UserFormValues } from "@/schemas";
 
 export function UsersListPage() {
   const users = useUsers();
@@ -19,34 +22,32 @@ export function UsersListPage() {
   const [editing, setEditing] = useState<UserResponse | null>(null);
   const [creating, setCreating] = useState(false);
 
-  async function handleSubmit(values: UserFormValues & { id?: number; password?: string | undefined }) {
-    if (values.id) {
-      await updateUser.mutateAsync({
-        id: values.id,
-        fullName: values.fullName,
-        email: values.email,
-        roleNames: values.roleNames,
-        ...(values.password ? { password: values.password } : {}),
-      });
+  async function handleSubmit(values: CreateAccountRequest | UpdateAccountRequest) {
+    if ("id" in values) {
+      await updateUser.mutateAsync(values);
       toast.show("Usuario actualizado", "success");
     } else {
-      await createUser.mutateAsync({
-        username: values.username,
-        fullName: values.fullName,
-        email: values.email,
-        password: values.password ?? "",
-        roleNames: values.roleNames,
-      });
-      toast.show("Usuario creado", "success");
+      // No password — the user sets theirs at the activation
+      // link in the email we send them.
+      await createUser.mutateAsync(values);
+      toast.show(
+        "Usuario creado. Se le ha enviado un correo para activar la cuenta.",
+        "success",
+      );
     }
     setEditing(null);
     setCreating(false);
   }
 
   const columns: Column<UserResponse>[] = [
-    { key: "username", header: "Usuario", render: (u) => u.username },
-    { key: "fullName", header: "Nombre", render: (u) => u.fullName },
+    // Post-V12 the table renders `email` where `Usuario` used
+    // to go — email IS the login identifier now and the
+    // `UserResponse` record no longer carries a separate
+    // `username` slot. The render falls back to `fullName` when
+    // the email is empty so freshly-seeded rows that haven't
+    // hydrated a name yet still show a readable handle.
     { key: "email", header: "Email", render: (u) => u.email },
+    { key: "fullName", header: "Nombre", render: (u) => u.fullName },
     {
       key: "active",
       header: "Estado",

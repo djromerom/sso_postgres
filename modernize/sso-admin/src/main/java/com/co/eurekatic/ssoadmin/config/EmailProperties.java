@@ -41,14 +41,32 @@ public record EmailProperties(
      * Default values mirror the legacy {@code general.properties}
      * defaults. Production deployments MUST override {@code from},
      * {@code logoUrl}, and the URLs.
+     *
+     * <p>Both URLs point at SPA pages under {@code /admin/**} (the
+     * admin-ui SPA is served there by the gateway's
+     * {@code AdminUiGlobalFilter}). The SPA pages render the
+     * password form and POST {@code {token, password}} back to the
+     * {@code /sso-admin/activateAccount} and {@code /restorePassword}
+     * endpoints. The legacy defaults pointed at the
+     * {@code /sso-admin/activateAccount} GET endpoint directly,
+     * which would have left the password in the URL query string
+     * had the SPA not existed — closed in this branch.
+     *
+     * <p>The {@code restoreUrl} default used to be a copy-paste of
+     * {@code activationUrl} (both pointing at
+     * {@code /sso-admin/activateAccount}). That bug was masked by
+     * {@code docker-compose.yml}'s env-var override
+     * ({@code SSO_RESTORE_URL}) being correct, but it would have
+     * surfaced in any deployment that ran {@code sso-admin}
+     * outside compose. Fixed here.
      */
     public EmailProperties {
         if (from == null || from.isBlank()) from = "no-reply@example.com";
         if (company == null || company.isBlank()) company = "Example Inc.";
         if (appName == null || appName.isBlank()) appName = "SSO Modernizado";
         if (logoUrl == null || logoUrl.isBlank()) logoUrl = "https://www.example.com/img/logo.png";
-        if (activationUrl == null || activationUrl.isBlank()) activationUrl = "http://localhost:8080/sso-admin/activateAccount";
-        if (restoreUrl == null || restoreUrl.isBlank()) restoreUrl = "http://localhost:8080/sso-admin/activateAccount";
+        if (activationUrl == null || activationUrl.isBlank()) activationUrl = "http://localhost:8080/admin/activate";
+        if (restoreUrl == null || restoreUrl.isBlank()) restoreUrl = "http://localhost:8080/admin/restore-password";
         if (activationTemplate == null || activationTemplate.isBlank()) activationTemplate = "activation-account.html";
         if (restoreTemplate == null || restoreTemplate.isBlank()) restoreTemplate = "restore-password-account.html";
     }

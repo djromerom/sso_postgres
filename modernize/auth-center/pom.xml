@@ -37,6 +37,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- Exposes /actuator/prometheus for the Grafana Alloy scraper.
+             Without this dep the endpoint 404s — actuator is wired but
+             the Prometheus format converter isn't on the classpath. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
@@ -47,6 +54,16 @@
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
+        </dependency>
+
+        <!-- Backing store for the refresh-token flow (RedisRefreshTokenStore).
+             Spring Boot manages the Lettuce version; we do not pin it here.
+             The interface (RefreshTokenStore) lives in `common` so the
+             controller and JsonLoginFilter can depend on it without pulling
+             Spring Data Redis transitively into the shared module. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
         <!-- Test scope -->
@@ -76,6 +93,29 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Testcontainers core: we use GenericContainer with the
+             redis:7-alpine image rather than the dedicated
+             org.testcontainers:redis module, because the parent BOM
+             already imports testcontainers-bom and the dedicated
+             module adds nothing we need (we configure the image +
+             port manually anyway). The container is wired into the
+             Spring context via @DynamicPropertySource. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- JUnit 5 integration for Testcontainers: provides the
+             @Testcontainers + @Container annotations that start /
+             stop the Redis container around the test class. The
+             `testcontainers` core artifact above does NOT pull this
+             in transitively. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

@@ -11,14 +11,26 @@ spring:
     banner-mode: off
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/sso}
+    # The localhost default assumes the operator is running
+    # sso-admin on the host with Postgres reachable via the
+    # Docker port mapping. For container runs the compose
+    # env block sets SPRING_DATASOURCE_URL with the
+    # fully-built JDBC URL, so this property is overridden
+    # at runtime. The default below is the host-mode
+    # fallback for `mvn spring-boot:run` outside compose.
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/sso}
     username: ${DB_USER:sso}
     password: ${DB_PASSWORD:change-me-in-prod}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
       minimum-idle: 2
-      connection-timeout: 30000
+      # Fail fast on DB unavailability. See auth-center
+      # for the rationale — 5s connection acquisition,
+      # 3s liveness probe, 5s startup fail.
+      connection-timeout: 5000
+      validation-timeout: 3000
+      initialization-fail-timeout: 5000
 
   jpa:
     hibernate:
@@ -57,6 +69,24 @@ spring:
     template-loader-path: classpath:/templates/
     prefer-file-system-access: false
     default-encoding: UTF-8
+
+  # AMQP producer for notification events. sso-admin publishes
+  # to the `notifications` topic exchange; notification-service
+  # consumes per channel. Connection details match the rest of
+  # the stack — the compose env block points RABBITMQ_HOST at
+  # the `rabbitmq` service.
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASS:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    # Publisher confirms + returns — surface unroutable
+    # messages (typo in the routing key, exchange missing) so
+    # the operator notices instead of the message silently
+    # disappearing into the broker.
+    publisher-confirm-type: correlated
+    publisher-returns: true
 
 eureka:
   client:
@@ -101,6 +131,13 @@ sso:
     api-token-ttl-seconds: 86400
     header-name: Authorization
     token-prefix: "Bearer "
+  # Provisioner sidecar. sso-admin POSTs here when a
+  # microservice row with kind=QUERY is created. The default
+  # points at the compose-DNS name `provisioner:9000`; for
+  # local dev outside compose, override with
+  # SSO_PROVISIONER_BASE_URL=http://localhost:9000.
+  provisioner:
+    base-url: ${SSO_PROVISIONER_BASE_URL:http://provisioner:9000}
   email:
     # Branding + URLs for activation and restore-password emails.
     # Override per environment.
@@ -108,8 +145,8 @@ sso:
     company: ${SSO_EMAIL_COMPANY:Example Inc.}
     app-name: ${SSO_EMAIL_APP_NAME:SSO Modernizado}
     logo-url: ${SSO_EMAIL_LOGO_URL:https://www.example.com/img/logo.png}
-    activation-url: ${SSO_ACTIVATION_URL:http://localhost:8080/sso-admin/activateAccount}
-    restore-url: ${SSO_RESTORE_URL:http://localhost:8080/sso-admin/activateAccount}
+    activation-url: ${SSO_ACTIVATION_URL:http://localhost:8080/admin/activate}
+    restore-url: ${SSO_RESTORE_URL:http://localhost:8080/admin/restore-password}
     activation-template: activation-account.html
     restore-template: restore-password-account.html
 
@@ -117,7 +154,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
   endpoint:
     health:
       probes:

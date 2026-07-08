@@ -44,8 +44,7 @@ class UserRoleMappingTest {
         Role admin = roleRepository.save(new Role("ADMIN", "Administrator role"));
         Role user = roleRepository.save(new Role("USER", "Standard user role"));
 
-        User alice = new User("alice", "{noop}not-actually-bcrypted-here");
-        alice.setEmail("alice@example.com");
+        User alice = new User("alice@example.com", "{noop}not-actually-bcrypted-here");
         alice.setFullName("Alice Adams");
         alice.addRole(admin);
         alice.addRole(user);
@@ -56,11 +55,10 @@ class UserRoleMappingTest {
         em.clear();
 
         // then — round-trip
-        User found = userRepository.findByUsername("alice")
+        User found = userRepository.findByEmail("alice@example.com")
                 .orElseThrow(() -> new AssertionError("alice not found"));
 
         assertThat(found.getId()).isEqualTo(saved.getId());
-        assertThat(found.getUsername()).isEqualTo("alice");
         assertThat(found.getEmail()).isEqualTo("alice@example.com");
         assertThat(found.getRoles())
                 .extracting(Role::getName)
@@ -71,7 +69,7 @@ class UserRoleMappingTest {
     void userDetailsContractReflectsEntityState() {
         // given — a fully-active user with roles
         Role admin = roleRepository.save(new Role("ADMIN"));
-        User u = new User("bob", "$2a$10$dummy");
+        User u = new User("bob@example.com", "$2a$10$dummy");
         u.setEnabled(true);
         u.setActive(true);
         u.setAccountNonExpired(true);
@@ -83,7 +81,7 @@ class UserRoleMappingTest {
         em.clear();
 
         // when
-        User found = userRepository.findByUsername("bob").orElseThrow();
+        User found = userRepository.findByEmail("bob@example.com").orElseThrow();
 
         // then
         assertThat(found.isEnabled()).isTrue();
@@ -98,7 +96,7 @@ class UserRoleMappingTest {
     @Test
     void disabledUserIsNotEnabled() {
         // given
-        User u = new User("carol", "$2a$10$dummy");
+        User u = new User("carol@example.com", "$2a$10$dummy");
         u.setEnabled(false);
         u.setActive(true);
         userRepository.save(u);
@@ -106,7 +104,7 @@ class UserRoleMappingTest {
         em.clear();
 
         // when
-        User found = userRepository.findByUsername("carol").orElseThrow();
+        User found = userRepository.findByEmail("carol@example.com").orElseThrow();
 
         // then — isEnabled() requires both enabled=true AND active=true
         assertThat(found.isEnabled()).isFalse();

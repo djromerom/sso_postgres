@@ -9,24 +9,39 @@ import {
   userFormSchema,
   type UserFormValues,
 } from "@/schemas";
-import type { UserResponse } from "@/api/types";
+import type { CreateAccountRequest, UpdateAccountRequest, UserResponse } from "@/api/types";
 
 interface Props {
   open: boolean;
   user: UserResponse | null; // null = create
   onClose: () => void;
-  onSubmit: (values: UserFormValues) => Promise<void>;
+  // The drawer dispatches one of two wire shapes, discriminated
+  // by the presence of `id`. Mirrors CreateAccountRequest /
+  // UpdateAccountRequest from src/api/types.ts exactly (no
+  // password field on either — those flows own password: see
+  // /activateAccount and /restorePassword).
+  onSubmit: (values: CreateAccountRequest | UpdateAccountRequest) => Promise<void>;
 }
 
+/**
+ * Single drawer for both create and edit.
+ *
+ * <p>No password field on either branch, and no `username`
+ * field either — those are gone since the V12 migration. The
+ * email IS the login identifier, so the create form just
+ * asks for {@code fullName + email + roleNames}. The user
+ * sets their password by clicking the activation link
+ * ({@code POST /activateAccount}). The admin can't edit the
+ * email after creation; the {@code id} is the stable lookup
+ * key on the wire.
+ */
 export function UserFormDrawer({ open, user, onClose, onSubmit }: Props) {
   const rolesQuery = useRoles();
 
   const initialValues: UserFormValues = useMemo(
     () => ({
-      username: user?.username ?? "",
       fullName: user?.fullName ?? "",
       email: user?.email ?? "",
-      password: "",
       roleNames: user?.roleNames ?? [],
     }),
     [user],
@@ -41,15 +56,22 @@ export function UserFormDrawer({ open, user, onClose, onSubmit }: Props) {
     [rolesQuery.data],
   );
 
+  // On edit we render the email as read-only by passing
+  // `disabled` because email is the user's login identifier
+  // — and a stable {@code id} is the canonical lookup key
+  // (see UpdateAccountRequest in src/api/types.ts). If the
+  // admin really needs to rename a user, the safer path is
+  // to deactivate the old row and create a new one so audit
+  // trails stay consistent.
   return (
     <Drawer
       open={open}
       onClose={onClose}
-      title={user ? `Editar usuario: ${user.username}` : "Nuevo usuario"}
+      title={user ? `Editar usuario: ${user.fullName || user.email}` : "Nuevo usuario"}
       description={
         user
-          ? "Modifica los datos del usuario. La contraseña solo se actualiza si la escribes."
-          : "Crea un usuario nuevo y asígnale uno o más roles."
+          ? "Modifica los datos del usuario. Para cambiar la contraseña usa el flujo de restablecimiento."
+          : "Crea el usuario y asígnale uno o más roles. Se le enviará un correo para que active su cuenta y defina su contraseña."
       }
       footer={null}
     >
@@ -61,34 +83,29 @@ export function UserFormDrawer({ open, user, onClose, onSubmit }: Props) {
           return zodFieldErrors(result.error);
         }}
         onSubmit={async (values) => {
-          // For create: password is required. For edit: optional.
-          const payload = user
-            ? {
-                id: user.id,
-                fullName: values.fullName,
-                email: values.email,
-                roleNames: values.roleNames,
-                ...(values.password ? { password: values.password } : {}),
-              }
-            : { ...values, password: values.password ?? "" };
-          await onSubmit(payload as UserFormValues & { id?: number; password?: string | undefined });
+          if (user) {
+            // Edit path — payload matches UpdateAccountRequest.
+            await onSubmit({
+              id: user.id,
+              fullName: values.fullName,
+              email: values.email,
+              roleNames: values.roleNames,
+            });
+          } else {
+            // Create path — payload matches CreateAccountRequest.
+            // No password: the user sets it at activation.
+            await onSubmit({
+              fullName: values.fullName,
+              email: values.email,
+              roleNames: values.roleNames,
+            });
+          }
         }}
         onCancel={onClose}
         submitLabel={user ? "Guardar cambios" : "Crear usuario"}
       >
         {({ values, setField, errors }) => (
           <>
-            <Input
-              label="Usuario"
-              required
-              value={values.username}
-              onChange={(e) => setField("username", e.target.value)}
-              error={errors.username}
-              disabled={!!user}
-              hint={user ? "El usuario no se puede cambiar" : undefined}
-              autoComplete="off"
-            />
-            <div className="h-3" />
             <Input
               label="Nombre completo"
               required
@@ -104,21 +121,9 @@ export function UserFormDrawer({ open, user, onClose, onSubmit }: Props) {
               value={values.email}
               onChange={(e) => setField("email", e.target.value)}
               error={errors.email}
-            />
-            <div className="h-3" />
-            <Input
-              label={user ? "Nueva contraseña (opcional)" : "Contraseña"}
-              required={!user}
-              type="password"
-              value={values.password ?? ""}
-              onChange={(e) => setField("password", e.target.value)}
-              error={errors.password}
-              hint={
-                user
-                  ? "Déjala vacía para conservar la actual"
-                  : "Mínimo 8 caracteres"
-              }
-              autoComplete="new-password"
+              disabled={!!user}
+              hint={user ? "El email no se puede cambiar" : undefined}
+              autoComplete="off"
             />
             <div className="h-3" />
             <label className="mb-1 block text-sm font-medium text-slate-700">

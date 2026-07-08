@@ -20,7 +20,9 @@ import reactor.core.publisher.Mono;
  *
  * <p>Headers added:
  * <ul>
- *   <li>{@code X-Authenticated-User} — the JWT subject ({@code sub} claim)</li>
+ *   <li>{@code X-Authenticated-User} — the JWT subject ({@code sub} claim).
+ *       Post-V12 this is the user's email; the legacy {@code username}
+ *       header value is gone since the column was dropped.</li>
  *   <li>{@code X-Authenticated-Roles} — comma-separated role names</li>
  *   <li>{@code X-Authenticated-Token-Type} — {@code access} or {@code api}</li>
  * </ul>
@@ -53,7 +55,11 @@ public class UserForwardingGlobalFilter implements GlobalFilter, Ordered {
                 .map(Authentication::getPrincipal)
                 .ofType(AuthPrincipal.class)
                 .map(principal -> exchange.getRequest().mutate()
-                        .header(HEADER_USER, principal.username())
+                        // AuthPrincipal.email() — the JWT sub since V12
+                        // carries the user's email (the legacy username
+                        // column is gone). Header name is unchanged so
+                        // existing downstream parsers keep working.
+                        .header(HEADER_USER, principal.email())
                         .header(HEADER_ROLES, String.join(",", principal.roles()))
                         .header(HEADER_TOKEN_TYPE, principal.tokenType())
                         .build())

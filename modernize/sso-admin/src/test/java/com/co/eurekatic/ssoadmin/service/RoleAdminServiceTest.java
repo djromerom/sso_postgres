@@ -104,14 +104,14 @@ class RoleAdminServiceTest {
         r.setId(1L);
         User u = new User();
         u.setId(10L);
-        u.setUsername("alice");
+        u.setEmail("alice");
         u.setFullName("Alice");
         r.getUsers().add(u);
         when(roleRepository.findById(1L)).thenReturn(java.util.Optional.of(r));
 
         List<UserResponse> users = service.getUsersForRole(1L);
         assertThat(users).hasSize(1);
-        assertThat(users.get(0).username()).isEqualTo("alice");
+        assertThat(users.get(0).email()).isEqualTo("alice");
     }
 
     @Test
@@ -121,11 +121,11 @@ class RoleAdminServiceTest {
         r.setName("ADMIN");
         User member = new User();
         member.setId(10L);
-        member.setUsername("alice");
+        member.setEmail("alice");
         member.setFullName("Alice");
         User nonMember = new User();
         nonMember.setId(11L);
-        nonMember.setUsername("bob");
+        nonMember.setEmail("bob");
         nonMember.setFullName("Bob");
         r.getUsers().add(member);
         when(roleRepository.findById(1L)).thenReturn(java.util.Optional.of(r));
@@ -135,9 +135,9 @@ class RoleAdminServiceTest {
 
         assertThat(result).hasSize(2);
         UserRoleChecked aliceRow = result.stream()
-                .filter(c -> c.username().equals("alice")).findFirst().orElseThrow();
+                .filter(c -> c.email().equals("alice")).findFirst().orElseThrow();
         UserRoleChecked bobRow = result.stream()
-                .filter(c -> c.username().equals("bob")).findFirst().orElseThrow();
+                .filter(c -> c.email().equals("bob")).findFirst().orElseThrow();
         assertThat(aliceRow.checked()).isTrue();
         assertThat(bobRow.checked()).isFalse();
     }

@@ -1,0 +1,192 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "uid": "sso-overview",
+  "title": "SSO Stack — Overview",
+  "tags": ["sso", "lgtm", "overview"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {"from": "now-1h", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "mimir"},
+        "query": "label_values(http_server_requests_seconds_count{service=~\".+\"}, service)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": {"selected": true, "text": ["All"], "value": ["$__all"]}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate (req/s) by Service",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "mimir"},
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "lastNotNull"]}
+      },
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(http_server_requests_seconds_count{service=~\"$service\"}[5m]))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error Rate % (5xx) by Service",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "mimir"},
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "lastNotNull"]}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": null, "color": "green"},
+              {"value": 1, "color": "yellow"},
+              {"value": 5, "color": "red"}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "(sum by (service) (rate(http_server_requests_seconds_count{service=~\"$service\",status=~\"5..\"}[5m])) / sum by (service) (rate(http_server_requests_seconds_count{service=~\"$service\"}[5m]))) * 100",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "P95 Latency by Service (s)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "mimir"},
+      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "lastNotNull"]}
+      },
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(http_server_requests_seconds_bucket{service=~\"$service\"}[5m])))",
+          "legendFormat": "p95 {{service}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "JVM Heap Used by Service",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "mimir"},
+      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"]}
+      },
+      "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+      "targets": [
+        {
+          "expr": "sum by (service) (jvm_memory_used_bytes{service=~\"$service\",area=\"heap\"})",
+          "legendFormat": "{{service}} heap used",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Users overview (Postgres — sso_analytics.users_overview)",
+      "type": "table",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"x": 0, "y": 16, "w": 24, "h": 9},
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "id_user", "desc": false}]
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "account_status"}, "properties": [
+            {"id": "mappings", "value": [
+              {"type": "value", "options": {"OK": {"text": "OK", "color": "green", "index": 0}}},
+              {"type": "value", "options": {"DISABLED": {"text": "DISABLED", "color": "red", "index": 1}}},
+              {"type": "value", "options": {"LOCKED": {"text": "LOCKED", "color": "orange", "index": 2}}},
+              {"type": "value", "options": {"NO_EMAIL": {"text": "NO_EMAIL", "color": "yellow", "index": 3}}}
+            ]}
+          ]}
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT id_user, username, email, source, account_status, role_count, group_count, has_refresh_token, has_api_token FROM users_overview ORDER BY id_user"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Microservice catalog (Postgres — sso_analytics.microservice_catalog)",
+      "type": "table",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"x": 0, "y": 25, "w": 24, "h": 9},
+      "options": {"showHeader": true, "sortBy": [{"displayName": "serviceid", "desc": false}]},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT serviceid, kind, dialect, app_name, targeturlhost, endpoint_count, query_count, write_count FROM microservice_catalog ORDER BY serviceid"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Recent activity (Postgres — sso_analytics.recent_activity)",
+      "type": "table",
+      "datasource": {"type": "postgres", "uid": "postgres"},
+      "gridPos": {"x": 0, "y": 34, "w": 24, "h": 9},
+      "options": {"showHeader": true, "sortBy": [{"displayName": "ts", "desc": true}]},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT ts, entity_type, entity_id, entity_label FROM recent_activity LIMIT 50"
+        }
+      ]
+    }
+  ]
+}

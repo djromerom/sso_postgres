@@ -35,6 +35,7 @@ SERVICES=(
   "auth-center:auth-center/target/auth-center.jar:8081:com.co.eurekatic.auth.AuthCenterApplication"
   "sso-admin:sso-admin/target/sso-admin.jar:8083:com.co.eurekatic.ssoadmin.SsoAdminApplication"
   "api-gateway:api-gateway/target/api-gateway.jar:8080:com.co.eurekatic.gateway.ApiGatewayApplication"
+  "notification-service:notification-service/target/notification-service.jar:8085:com.co.eurekatic.notificationservice.NotificationServiceApplication"
 )
 
 # Devuelve los PIDs (uno por línea) que matchean un servicio, ya sea
@@ -176,7 +177,7 @@ echo ""
 "$0" status
 
 echo ""
-echo "Logs en: $LOG_DIR/{auth-center,sso-admin,api-gateway}.log"
+echo "Logs en: $LOG_DIR/{auth-center,sso-admin,api-gateway,notification-service}.log"
 echo "Sigue con: $0 logs"
 echo ""
 echo "Credenciales: admin / ChangeMe-Now-Please-123!"

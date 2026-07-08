@@ -37,7 +37,7 @@ class GroupAdminServiceTest {
             return g;
         });
 
-        GroupResponse resp = service.save(new GroupRequest("Ops", "Operations team"));
+        GroupResponse resp = service.save(new GroupRequest(null, "Ops", "Operations team"));
 
         assertThat(resp.id()).isEqualTo(7L);
         assertThat(resp.name()).isEqualTo("Ops");
@@ -53,7 +53,7 @@ class GroupAdminServiceTest {
         when(groupRepository.findByName("Ops")).thenReturn(Optional.of(existing));
         when(groupRepository.save(existing)).thenReturn(existing);
 
-        GroupResponse resp = service.save(new GroupRequest("Ops", "New desc"));
+        GroupResponse resp = service.save(new GroupRequest(null, "Ops", "New desc"));
 
         assertThat(resp.id()).isEqualTo(3L);
         assertThat(resp.description()).isEqualTo("New desc");
@@ -81,14 +81,14 @@ class GroupAdminServiceTest {
         g.setName("Ops");
         User u = new User();
         u.setId(1L);
-        u.setUsername("alice");
+        u.setEmail("alice");
         when(userRepository.findById(1L)).thenReturn(Optional.of(u));
         when(groupRepository.findById(2L)).thenReturn(Optional.of(g));
         when(groupRepository.save(g)).thenReturn(g);
 
         service.bindUserGroup(1L, 2L);
 
-        assertThat(g.getUsers()).extracting(User::getUsername).contains("alice");
+        assertThat(g.getUsers()).extracting(User::getEmail).contains("alice");
     }
 
     @Test

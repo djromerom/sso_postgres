@@ -32,10 +32,18 @@ import java.util.stream.Collectors;
  * {@code Set<Role>} for the role relation (not the legacy collection
  * anti-pattern), and exposes a clean {@link UserDetails} surface.
  *
+ * <h2>Login identifier</h2>
+ * <p>The login identifier is now {@link #email} (see Flyway migration
+ * {@code V12}). The {@code username} column is gone — callers should
+ * use {@link #getEmail()} instead. {@link #getUsername()} is kept only
+ * to satisfy the {@link UserDetails} contract; it returns {@code email}
+ * because Spring Security treats it as an opaque principal name.
+ *
  * <p>Schema mirrors the legacy DB:
  * <ul>
  *   <li>table: {@code users}</li>
  *   <li>id column: {@code id_user}</li>
+ *   <li>login identifier: {@code email} (UNIQUE, NOT NULL since V12)</li>
  *   <li>role join table: {@code role_users} (matches legacy)</li>
  * </ul>
  */
@@ -51,13 +59,15 @@ public class User implements UserDetails {
     @Column(name = "id_user")
     private Long id;
 
-    @Column(name = "username", nullable = false, unique = true, length = 80)
-    private String username;
-
     @Column(name = "full_name", length = 200)
     private String fullName;
 
-    @Column(name = "email", length = 200)
+    /**
+     * Login identifier. UNIQUE + NOT NULL (enforced by the V12
+     * migration). Spring's {@link #getUsername()} returns this
+     * field so the {@link UserDetails} contract stays satisfied.
+     */
+    @Column(name = "email", nullable = false, unique = true, length = 200)
     private String email;
 
     /**
@@ -125,8 +135,8 @@ public class User implements UserDetails {
     @Setter(AccessLevel.NONE)
     private Set<Group> groups = new HashSet<>();
 
-    public User(String username, String password) {
-        this.username = username;
+    public User(String email, String password) {
+        this.email = email;
         this.password = password;
     }
 
@@ -160,9 +170,16 @@ public class User implements UserDetails {
         return password;
     }
 
+    /**
+     * The {@link UserDetails} contract: Spring Security uses this
+     * purely as the principal name on the {@code Authentication}.
+     * Since the login identifier is now {@link #email}, this
+     * returns the email address. Internal callers should prefer
+     * {@link #getEmail()} for clarity.
+     */
     @Override
     public String getUsername() {
-        return username;
+        return email;
     }
 
     @Override

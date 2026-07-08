@@ -4,9 +4,11 @@ import com.co.eurekatic.common.entity.Role;
 import com.co.eurekatic.common.entity.User;
 import com.co.eurekatic.common.repository.RoleRepository;
 import com.co.eurekatic.common.repository.UserRepository;
+import com.co.eurekatic.ssoadmin.config.EmailProperties;
 import com.co.eurekatic.ssoadmin.dto.CreateAccountRequest;
 import com.co.eurekatic.ssoadmin.dto.UpdateAccountRequest;
 import com.co.eurekatic.ssoadmin.dto.UserResponse;
+import com.co.eurekatic.ssoadmin.event.NotificationEventPublisher;
 import com.co.eurekatic.ssoadmin.exception.EmailInvalidException;
 import com.co.eurekatic.ssoadmin.exception.NotFoundException;
 import com.co.eurekatic.ssoadmin.exception.UserDuplicateException;
@@ -16,8 +18,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -32,16 +36,22 @@ import java.util.stream.Collectors;
  * <p>Side effects:
  * <ul>
  *   <li>{@link #createAccount} — creates a User in the DB
- *       (status: {@code active=true}, {@code enabled=false} until
- *       activation), issues an activation token, sends an
- *       activation email.</li>
+ *       (status: {@code active=true}, {@code enabled=false},
+ *       {@code password=null} until activation), issues an
+ *       activation token, publishes an activation email event.
+ *       Since the V12 migration {@code username} is gone — the
+ *       email is the unique login identifier and serves as the
+ *       row's primary natural key.</li>
  *   <li>{@link #activateAccount} — clears the activation token,
  *       sets {@code enabled=true} and {@code active=true},
- *       BCrypt-encodes the new password.</li>
+ *       BCrypt-encodes the new password the user typed on the
+ *       activation landing page. This is the FIRST place a
+ *       password ever enters the system for that account.</li>
  *   <li>{@link #forgotPassword} — issues a restore token and
- *       sends a restore-password email. Always returns silently
- *       even if the email is unknown, to avoid leaking which
- *       addresses are registered.</li>
+ *       publishes a restore-password email event. Always returns
+ *       silently even if the email is unknown, to avoid leaking
+ *       which addresses are registered. The user types a new
+ *       password at {@code POST /restorePassword}.</li>
  * </ul>
  */
 @Service
@@ -59,42 +69,58 @@ public class UserAdminService {
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
     private final EmailService emailService;
+    private final EmailProperties emailProps;
+    private final NotificationEventPublisher events;
 
     public UserAdminService(UserRepository userRepository,
                             RoleRepository roleRepository,
                             PasswordEncoder passwordEncoder,
                             TokenService tokenService,
-                            EmailService emailService) {
+                            EmailService emailService,
+                            EmailProperties emailProps,
+                            NotificationEventPublisher events) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.emailService = emailService;
+        this.emailProps = emailProps;
+        this.events = events;
     }
 
     /**
      * Creates a new user. The user is created in
-     * {@code active=true} but {@code enabled=false} state — they
-     * have to click the activation link in the email before they
-     * can log in. (This mirrors the legacy flow.)
+     * {@code active=true} but {@code enabled=false} state with
+     * no password yet — they have to click the activation link
+     * in the email and POST {@code /activateAccount} with their
+     * chosen password before they can log in.
+     *
+     * <p>The admin no longer types a username OR a password.
+     * Email is the unique login identifier (the {@code users.username}
+     * column was dropped in the V12 migration) and the first
+     * password the system sees for the account is the one
+     * the user enters on the activation landing page. This
+     * mirrors the modern "password-set-by-owner" pattern and
+     * removes two leak vectors: an admin with the
+     * create-account role previously knew the initial password
+     * of every account (and that password was overwritten on
+     * activation anyway), and they had to type a "username" that
+     * doubled as a publicly visible login id.
      */
     @Transactional
     public UserResponse createAccount(CreateAccountRequest req) {
-        if (userRepository.existsByUsername(req.username())) {
-            throw new UserDuplicateException(req.username());
-        }
         if (req.email() == null || !EMAIL_REGEX.matcher(req.email()).matches()) {
             throw new EmailInvalidException(req.email());
         }
-        if (req.passwordConfirm() != null && !req.password().equals(req.passwordConfirm())) {
-            throw new IllegalArgumentException("Passwords do not match");
+        if (userRepository.existsByEmail(req.email())) {
+            throw new UserDuplicateException(req.email());
         }
 
         User user = new User();
-        user.setUsername(req.username());
-        user.setFullName(req.fullName());
         user.setEmail(req.email());
-        user.setPassword(passwordEncoder.encode(req.password()));
+        user.setFullName(req.fullName());
+        // No passwordEncoder here — the password column is left
+        // null until /activateAccount BCrypts and stamps it.
         user.setActive(true);
         user.setEnabled(false);
         user.setLdap(false);
@@ -109,9 +135,16 @@ public class UserAdminService {
         String token = tokenService.issueActivationToken(user);
         User saved = userRepository.save(user);
 
-        emailService.sendActivationEmail(saved, token);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("displayName", saved.getFullName() == null ? saved.getEmail() : saved.getFullName());
+        payload.put("email", saved.getEmail());
+        payload.put("activationLink", emailProps.activationUrl() + "?token=" + token);
+        payload.put("ttlMinutes", 60);
+        events.publish("email", String.valueOf(saved.getId()), saved.getEmail(),
+                "account-activation", payload, null);
+
         log.info("Created user '{}' (active=true, enabled=false, pending activation)",
-                saved.getUsername());
+                saved.getEmail());
         return UserResponse.fromEntity(saved);
     }
 
@@ -119,11 +152,14 @@ public class UserAdminService {
      * Updates mutable fields on an existing user. Null fields are
      * left unchanged. If {@code roleNames} is non-null, it
      * REPLACES the user's current role set.
+     *
+     * <p>Lookup is by {@code id} (the user's numeric PK), NOT by
+     * email — email is mutable and not a stable identity key.
      */
     @Transactional
     public UserResponse updateAccount(UpdateAccountRequest req) {
-        User user = userRepository.findByUsername(req.username())
-                .orElseThrow(() -> new NotFoundException("User", req.username()));
+        User user = userRepository.findById(req.id())
+                .orElseThrow(() -> new NotFoundException("User", req.id()));
 
         if (req.fullName() != null) user.setFullName(req.fullName());
         if (req.email() != null) {
@@ -143,6 +179,10 @@ public class UserAdminService {
             Set<Role> current = user.getRoles();
             Set<String> wanted = req.roleNames().stream()
                     .collect(Collectors.toCollection(LinkedHashSet::new));
+            Set<String> removed = current.stream()
+                    .map(Role::getName)
+                    .filter(n -> !wanted.contains(n))
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
             current.removeIf(r -> !wanted.contains(r.getName()));
             for (String name : wanted) {
                 if (current.stream().noneMatch(r -> r.getName().equals(name))) {
@@ -151,9 +191,20 @@ public class UserAdminService {
                     user.addRole(role);
                 }
             }
+            // Publish role-revoked for every role removed by the
+            // replace strategy (single bulk update).
+            for (String roleName : removed) {
+                publishRoleRevoked(user, roleName);
+            }
         }
 
-        return UserResponse.fromEntity(userRepository.save(user));
+        User saved = userRepository.save(user);
+
+        if (req.active() != null && !req.active()) {
+            publishAccountDeactivated(saved, "Disabled via admin update");
+        }
+
+        return UserResponse.fromEntity(saved);
     }
 
     /**
@@ -171,8 +222,14 @@ public class UserAdminService {
         user.setPassword(passwordEncoder.encode(password));
         user.setEnabled(true);
         user.setActive(true);
-        userRepository.save(user);
-        log.info("Activated user '{}'", user.getUsername());
+        User saved = userRepository.save(user);
+        log.info("Activated user '{}'", saved.getEmail());
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("displayName", saved.getFullName() == null ? saved.getEmail() : saved.getFullName());
+        payload.put("email", saved.getEmail());
+        events.publish("email", String.valueOf(saved.getId()), saved.getEmail(),
+                "account-activated", payload, null);
     }
 
     /**
@@ -187,8 +244,14 @@ public class UserAdminService {
         }
         User user = tokenService.consumeRestoreToken(token);
         user.setPassword(passwordEncoder.encode(password));
-        userRepository.save(user);
-        log.info("Restored password for user '{}'", user.getUsername());
+        User saved = userRepository.save(user);
+        log.info("Restored password for user '{}'", saved.getEmail());
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("displayName", saved.getFullName() == null ? saved.getEmail() : saved.getFullName());
+        payload.put("email", saved.getEmail());
+        events.publish("email", String.valueOf(saved.getId()), saved.getEmail(),
+                "password-changed", payload, null);
     }
 
     /**
@@ -204,12 +267,19 @@ public class UserAdminService {
                 .ifPresent(u -> {
                     String token = tokenService.issueRestoreToken(u);
                     userRepository.save(u);
-                    emailService.sendRestorePasswordEmail(u, token);
+
+                    Map<String, Object> payload = new LinkedHashMap<>();
+                    payload.put("displayName", u.getFullName() == null ? u.getEmail() : u.getFullName());
+                    payload.put("email", u.getEmail());
+                    payload.put("resetLink", emailProps.restoreUrl() + "?token=" + token);
+                    payload.put("ttlMinutes", 30);
+                    events.publish("email", String.valueOf(u.getId()), u.getEmail(),
+                            "password-reset", payload, null);
                 });
     }
 
     /**
-     * Lists all users (id, fullName, username, ldap, active).
+     * Lists all users (id, fullName, email, ldap, active).
      * The legacy returned a flat Map list; we return a typed
      * {@code List<UserResponse>}.
      */
@@ -221,14 +291,15 @@ public class UserAdminService {
     }
 
     /**
-     * Returns the role names for the given username. The legacy
-     * returned a {@code List<String>} of role names; we keep
-     * the same shape for API compatibility.
+     * Returns the role names for the given email. The legacy
+     * {@code getRolesByUsername} was renamed so the URL
+     * reflects the actual lookup key (email IS the unique
+     * login identifier since the V12 migration).
      */
     @Transactional(readOnly = true)
-    public List<String> getRolesByUsername(String username) {
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new NotFoundException("User", username))
+    public List<String> getRolesByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new NotFoundException("User", email))
                 .getRoles().stream()
                 .map(Role::getName)
                 .collect(Collectors.toList());
@@ -244,8 +315,12 @@ public class UserAdminService {
                 .orElseThrow(() -> new NotFoundException("User", userId));
         Role role = roleRepository.findById(roleId)
                 .orElseThrow(() -> new NotFoundException("Role", roleId));
+        boolean alreadyBound = user.getRoles().stream().anyMatch(r -> r.getId().equals(roleId));
         user.addRole(role);
-        userRepository.save(user);
+        User saved = userRepository.save(user);
+        if (!alreadyBound) {
+            publishRoleAssigned(saved, role.getName());
+        }
     }
 
     /**
@@ -256,11 +331,19 @@ public class UserAdminService {
     public void unbindUserRole(Long userId, Long roleId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("User", userId));
+        String removedRoleName = user.getRoles().stream()
+                .filter(r -> r.getId().equals(roleId))
+                .findFirst()
+                .map(Role::getName)
+                .orElse(null);
         user.getRoles().stream()
                 .filter(r -> r.getId().equals(roleId))
                 .findFirst()
                 .ifPresent(user::removeRole);
-        userRepository.save(user);
+        User saved = userRepository.save(user);
+        if (removedRoleName != null) {
+            publishRoleRevoked(saved, removedRoleName);
+        }
     }
 
     /**
@@ -284,5 +367,34 @@ public class UserAdminService {
             result.add(role);
         }
         return result;
+    }
+
+    // ---- notification helpers -------------------------------------
+
+    private void publishRoleAssigned(User user, String roleName) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("displayName", user.getFullName() == null ? user.getEmail() : user.getFullName());
+        payload.put("email", user.getEmail());
+        payload.put("roleName", roleName);
+        events.publish("email", String.valueOf(user.getId()), user.getEmail(),
+                "role-assigned", payload, null);
+    }
+
+    private void publishRoleRevoked(User user, String roleName) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("displayName", user.getFullName() == null ? user.getEmail() : user.getFullName());
+        payload.put("email", user.getEmail());
+        payload.put("roleName", roleName);
+        events.publish("email", String.valueOf(user.getId()), user.getEmail(),
+                "role-revoked", payload, null);
+    }
+
+    private void publishAccountDeactivated(User user, String reason) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("displayName", user.getFullName() == null ? user.getEmail() : user.getFullName());
+        payload.put("email", user.getEmail());
+        payload.put("reason", reason);
+        events.publish("email", String.valueOf(user.getId()), user.getEmail(),
+                "account-deactivated", payload, null);
     }
 }

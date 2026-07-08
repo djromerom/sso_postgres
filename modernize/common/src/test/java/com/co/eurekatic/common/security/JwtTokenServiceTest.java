@@ -45,10 +45,10 @@ class JwtTokenServiceTest {
         String token = svc.issueAccessToken("alice", roles);
         AuthPrincipal principal = svc.parse(token);
 
-        assertThat(principal.username()).isEqualTo("alice");
+        assertThat(principal.email()).isEqualTo("alice");
         assertThat(principal.roles()).containsExactlyInAnyOrder("USER", "ADMIN");
         assertThat(principal.tokenType()).isEqualTo("access");
-        assertThat(svc.parseAndValidateIssuer(token).username()).isEqualTo("alice");
+        assertThat(svc.parseAndValidateIssuer(token).email()).isEqualTo("alice");
     }
 
     @Test
@@ -57,7 +57,7 @@ class JwtTokenServiceTest {
         String token = svc.issueApiToken("service-account", Set.of("ADMIN"));
         AuthPrincipal principal = svc.parse(token);
         assertThat(principal.tokenType()).isEqualTo("api");
-        assertThat(principal.username()).isEqualTo("service-account");
+        assertThat(principal.email()).isEqualTo("service-account");
         assertThat(principal.roles()).containsExactly("ADMIN");
     }
 
@@ -144,7 +144,7 @@ class JwtTokenServiceTest {
         JwtTokenService svc = new JwtTokenService(DEFAULT_PROPS);
 
         // plain parse accepts it (signature is valid, only iss is wrong)
-        assertThat(svc.parse(foreignToken).username()).isEqualTo("alice");
+        assertThat(svc.parse(foreignToken).email()).isEqualTo("alice");
 
         // strict parse rejects
         assertThatThrownBy(() -> svc.parseAndValidateIssuer(foreignToken))

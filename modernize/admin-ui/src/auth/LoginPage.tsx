@@ -11,6 +11,11 @@ interface LocationState {
  * returns the access token in the body and sets the refresh cookie
  * in the response headers. On success we navigate to where the
  * user was trying to go, or /admin by default.
+ *
+ * <p>The login identifier is the user's email — the legacy
+ * {@code username} column is gone since the V12 migration. The
+ * field still has {@code autoComplete="email"} so password
+ * managers fill it correctly.
  */
 export function LoginPage() {
   const { status, login, error, clearError } = useAuth();
@@ -18,7 +23,7 @@ export function LoginPage() {
   const location = useLocation();
   const from = (location.state as LocationState | null)?.from ?? "/admin";
 
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -30,7 +35,7 @@ export function LoginPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const ok = await login(username, password);
+      const ok = await login(email, password);
       if (ok) navigate(from, { replace: true });
     } finally {
       setSubmitting(false);
@@ -58,13 +63,14 @@ export function LoginPage() {
         ) : null}
 
         <label className="mb-3 block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Usuario</span>
+          <span className="mb-1 block font-medium text-slate-700">Email</span>
           <input
-            type="text"
-            autoComplete="username"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
             required
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             className="w-full rounded border border-slate-300 px-3 py-2 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
           />
         </label>

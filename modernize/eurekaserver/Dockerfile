@@ -11,7 +11,7 @@
 # Stage 2 — runtime: a slim JRE 21 base. The fat-jar from the build
 # stage is the only artifact we keep.
 
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-25 AS build
 WORKDIR /workspace
 
 # Copy parent POM and every module's POM first so the dependency
@@ -25,6 +25,9 @@ COPY auth-center/pom.xml auth-center/
 COPY api-gateway/pom.xml api-gateway/
 COPY hello-service/pom.xml hello-service/
 COPY sso-admin/pom.xml sso-admin/
+COPY query-service/pom.xml query-service/
+COPY provisioner/pom.xml provisioner/
+COPY notification-service/pom.xml notification-service/
 
 # Pre-resolve dependencies (offline) so the actual build doesn't
 # re-download them on every source change. `-pl` restricts the
@@ -36,14 +39,14 @@ COPY eurekaserver/src eurekaserver/src
 RUN mvn -B -ntp -pl eurekaserver -am clean package -DskipTests -q
 
 # ---- runtime stage ----
-FROM eclipse-temurin:21-jre-jammy
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 
 # Non-root user. UID 1000 matches the typical "developer" user in
 # most Linux distros, and gives the container something to bind
 # mounted volumes as without root.
-RUN groupadd --system --gid 1000 app && \
-    useradd  --system --uid 1000 --gid app --home /app app
+RUN groupadd --system --gid 10001 app && \
+    useradd  --system --uid 10001 --gid app --home /app app
 
 COPY --from=build --chown=app:app /workspace/eurekaserver/target/eurekaserver.jar /app/app.jar
 

@@ -7,8 +7,11 @@ import com.co.eurekatic.ssoadmin.service.GroupAdminService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -40,6 +43,11 @@ public class GroupController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
+    @PutMapping("/update")
+    public GroupResponse update(@Valid @RequestBody GroupRequest req) {
+        return service.update(req);
+    }
+
     @GetMapping
     public List<GroupResponse> getGroups() {
         return service.getGroups();
@@ -49,5 +57,24 @@ public class GroupController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void bindUserGroup(@Valid @RequestBody BindUserGroupRequest req) {
         service.bindUserGroup(req.userId(), req.groupId());
+    }
+
+    /* ====================== bindings: role ====================== */
+
+    @PostMapping("/{id}/role/{roleId}")
+    public ResponseEntity<Void> bindRole(@PathVariable Long id, @PathVariable Long roleId) {
+        service.bindRole(id, roleId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{id}/role/{roleId}")
+    public ResponseEntity<Void> unbindRole(@PathVariable Long id, @PathVariable Long roleId) {
+        service.unbindRole(id, roleId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{id}/roles/checked")
+    public List<GroupAdminService.RoleChecked> getRolesForGroupChecked(@PathVariable Long id) {
+        return service.getRolesForGroupChecked(id);
     }
 }

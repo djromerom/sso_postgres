@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Table, type Column } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
-import { useCreateGroup, useGroups } from "@/hooks/useGroups";
+import { useCreateGroup, useGroups, useUpdateGroup } from "@/hooks/useGroups";
 import type { GroupResponse } from "@/api/types";
 import { GroupFormDrawer } from "./GroupFormDrawer";
 import type { GroupFormValues } from "@/schemas";
@@ -10,13 +10,25 @@ import type { GroupFormValues } from "@/schemas";
 export function GroupsListPage() {
   const groups = useGroups();
   const createGroup = useCreateGroup();
+  const updateGroup = useUpdateGroup();
   const toast = useToast();
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<GroupResponse | null>(null);
 
-  async function handleSubmit(values: GroupFormValues) {
-    await createGroup.mutateAsync(values);
-    toast.show("Grupo creado", "success");
+  function closeDrawer() {
     setCreating(false);
+    setEditing(null);
+  }
+
+  async function handleSubmit(values: GroupFormValues & { id?: number }) {
+    if (values.id != null) {
+      await updateGroup.mutateAsync(values);
+      toast.show("Grupo actualizado", "success");
+    } else {
+      await createGroup.mutateAsync(values);
+      toast.show("Grupo creado", "success");
+    }
+    closeDrawer();
   }
 
   const columns: Column<GroupResponse>[] = [
@@ -27,6 +39,16 @@ export function GroupsListPage() {
       header: "Miembros",
       align: "right",
       render: (g) => g.memberCount,
+    },
+    {
+      key: "actions",
+      header: "",
+      align: "right",
+      render: (g) => (
+        <Button size="sm" variant="secondary" onClick={() => setEditing(g)}>
+          Editar
+        </Button>
+      ),
     },
   ];
 
@@ -44,8 +66,9 @@ export function GroupsListPage() {
         empty="Aún no hay grupos."
       />
       <GroupFormDrawer
-        open={creating}
-        onClose={() => setCreating(false)}
+        open={creating || editing !== null}
+        group={editing}
+        onClose={closeDrawer}
         onSubmit={handleSubmit}
       />
     </section>

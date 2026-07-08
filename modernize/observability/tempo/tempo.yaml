@@ -1,0 +1,46 @@
+# =====================================================================
+# Grafana Tempo — traces backend, monolithic single-binary mode with
+# local filesystem storage. Fine for a Docker Compose dev stack; swap
+# `storage.trace.backend` to s3/gcs for production HA.
+#
+# In Tempo v3 the monolithic config no longer accepts top-level
+# `ingester:` / `compactor:` / `traces_storage:` blocks. The
+# `metrics_generator` block was also radically simplified — the v2
+# `registry` / `storage` / `remote_write` / `traces_storage` /
+# `processor` sub-fields no longer exist in v3 (most moved to
+# Kafka-based generator.* flags). For a basic trace store in v3
+# monolithic mode you only need `distributor`, `storage.trace`,
+# `query_frontend`. The RED metrics / service-graph is dropped
+# here — Grafana's Trace UI and Search still work.
+# =====================================================================
+stream_over_http_enabled: true
+
+server:
+  http_listen_port: 3200
+
+# Anonymous usage reporting off — dev stack, no phone-home.
+usage_report:
+  reporting_enabled: false
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/traces
+
+# query_frontend must be present in monolithic mode so the ingester's
+# query path can route through it.
+query_frontend:
+  search:
+    max_duration: 168h

@@ -2,6 +2,7 @@ package com.co.eurekatic.ssoadmin.controller;
 
 import com.co.eurekatic.ssoadmin.dto.BindUserRoleRequest;
 import com.co.eurekatic.ssoadmin.dto.CreateAccountRequest;
+import com.co.eurekatic.ssoadmin.dto.TokenPasswordRequest;
 import com.co.eurekatic.ssoadmin.dto.UpdateAccountRequest;
 import com.co.eurekatic.ssoadmin.dto.UserResponse;
 import com.co.eurekatic.ssoadmin.service.UserAdminService;
@@ -50,11 +51,17 @@ public class UserController {
      * Public endpoint (no auth) — the user arrives here from the
      * activation email link. Returns 200 with an empty body on
      * success.
+     *
+     * <p>POST + JSON body (not GET + query string): the activation
+     * email hands the user a token (delivered in the link the user
+     * clicks); the SPA renders a password form on the landing
+     * page and POSTs the body here. The password never travels in
+     * the URL — no leak via access logs, proxy logs, browser
+     * history, or the {@code Referer} header.
      */
-    @GetMapping("/activateAccount")
-    public ResponseEntity<Void> activateAccount(@RequestParam String token,
-                                                @RequestParam String password) {
-        service.activateAccount(token, password);
+    @PostMapping("/activateAccount")
+    public ResponseEntity<Void> activateAccount(@Valid @RequestBody TokenPasswordRequest req) {
+        service.activateAccount(req.token(), req.password());
         return ResponseEntity.ok().build();
     }
 
@@ -72,12 +79,14 @@ public class UserController {
     /**
      * Public restore endpoint (paired with the email sent by
      * {@link #forgotPassword}). Mirrors {@link #activateAccount}
-     * but for the restore flow.
+     * but for the restore flow. Same POST + body shape as
+     * {@link #activateAccount} — uses the shared
+     * {@link TokenPasswordRequest} DTO. Password never travels
+     * in the URL.
      */
-    @GetMapping("/restorePassword")
-    public ResponseEntity<Void> restorePassword(@RequestParam String token,
-                                                @RequestParam String password) {
-        service.restorePassword(token, password);
+    @PostMapping("/restorePassword")
+    public ResponseEntity<Void> restorePassword(@Valid @RequestBody TokenPasswordRequest req) {
+        service.restorePassword(req.token(), req.password());
         return ResponseEntity.ok().build();
     }
 
@@ -86,9 +95,16 @@ public class UserController {
         return service.getUsers();
     }
 
-    @GetMapping("/getRolesByUsername")
-    public List<String> getRolesByUsername(@RequestParam String username) {
-        return service.getRolesByUsername(username);
+    /**
+     * Returns the role names for the user identified by email.
+     * Email is the unique login identifier since the V12
+     * migration (the prior {@code username} column is gone).
+     * Renamed from the legacy {@code getRolesByUsername} so the
+     * URL reflects the actual lookup key.
+     */
+    @GetMapping("/getRolesByEmail")
+    public List<String> getRolesByEmail(@RequestParam String email) {
+        return service.getRolesByEmail(email);
     }
 
     @GetMapping("/user/roles")

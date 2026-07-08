@@ -9,14 +9,43 @@ spring:
     banner-mode: off
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/sso}
+    # The localhost default assumes the operator is running
+    # auth-center on the host with Postgres reachable via the
+    # Docker port mapping (compose forwards
+    # ${POSTGRES_PORT:-5432}:5432 to the host's loopback).
+    # For container runs the compose env block sets
+    # SPRING_DATASOURCE_URL with the fully-built JDBC URL
+    # (composed from DB_URL host:port + DB_NAME + DB_SSLMODE +
+    # DB_CHANNEL_BINDING), so this property is overridden at
+    # runtime. The default below is the host-mode fallback for
+    # `mvn spring-boot:run` outside compose.
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/sso}
     username: ${DB_USER:sso}
     password: ${DB_PASSWORD:change-me-in-prod}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
       minimum-idle: 2
-      connection-timeout: 30000
+      # 5s instead of Hikari's 30s default. A request that
+      # can't get a connection within 5s is in a worse state
+      # than 503ing fast — the default 30s makes every login
+      # / refresh / user-lookup hang for half a minute when
+      # Postgres is briefly unreachable, which is what users
+      # perceive as "the app is broken". 5s is short enough
+      # to fail fast, long enough to absorb a normal TCP
+      # handshake under load.
+      connection-timeout: 5000
+      # Same idea on the liveness probe: a connection that
+      # can't pass `SELECT 1` in 3s is dead, kill it.
+      validation-timeout: 3000
+      # When the pool starts up, if the very first connection
+      # can't be acquired, fail the application boot instead
+      # of starting in a half-broken state. The default of
+      # 1ms (== "wait forever") is a footgun: every request
+      # would time out on the connection-timeout above
+      # instead of the operator getting a clear
+      # "Postgres is down" message at startup.
+      initialization-fail-timeout: 5000
 
   jpa:
     hibernate:
@@ -27,6 +56,21 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         jdbc:
           time_zone: UTC
+
+  data:
+    redis:
+      # Wired from REDIS_HOST/REDIS_PORT/REDIS_PASSWORD via
+      # docker-compose. Defaults are localhost so a `mvn spring-boot:run`
+      # on the host machine works without the compose stack (assuming
+      # a local Redis on the default port).
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      # Short timeout — the refresh-token path must fail fast when
+      # Redis is unreachable; the controller returns 401, the SPA
+      # forces re-login. Don't let a stuck Lettuce command hold a
+      # /auth/refresh request open for the default 60s.
+      timeout: 2s
 
 eureka:
   client:
@@ -70,15 +114,40 @@ sso:
     # SSO_BOOTSTRAP_ENABLED=false and provision users via an admin
     # endpoint or migration.
     enabled: ${SSO_BOOTSTRAP_ENABLED:true}
-    admin-username: ${SSO_ADMIN_USERNAME:admin}
+    # Post-V12 the seed key is the email (the legacy
+    # `admin-username` slot is gone since the column it pointed
+    # at was dropped from the schema). SSO_ADMIN_USERNAME is
+    # kept as a fallback alias so an existing .env file silently
+    # migrates — the resolver tries `SSO_ADMIN_EMAIL` first, then
+    # `SSO_ADMIN_USERNAME` (which we treat as a deprecated
+    # human-readable identifier). See DataInitializer.
+    admin-email: ${SSO_ADMIN_EMAIL:${SSO_ADMIN_USERNAME:admin@example.com}}
     admin-password: ${SSO_ADMIN_PASSWORD:ChangeMe-Now-Please-123!}
-    admin-email: ${SSO_ADMIN_EMAIL:admin@example.com}
+  refresh-token:
+    # Lifetime of every refresh token minted by the store. Mirrored
+    # to the sso_refresh cookie's Max-Age via RefreshTokenStore.ttlSeconds()
+    # so the browser-side hint and the server-side source of truth
+    # stay in sync.
+    ttl-seconds: 2592000          # 30 days
+    # Redis key namespace. MUST stay coupled to the
+    # JsonLoginFilter.REFRESH_COOKIE_NAME = "sso_refresh" cookie
+    # name — if the cookie name is ever renamed, this prefix must
+    # change too. Otherwise a stale cookie from a previous
+    # deployment could be replayed against a different prefix.
+    key-prefix: sso:refresh
+    # fail-open is reserved for emergency / dev-only modes and is
+    # always false in production. Setting this to true would let
+    # mint() / rotate() succeed even when Redis is unreachable,
+    # defeating the entire fix. Left here as an explicit switch so
+    # the failure mode is visible in the config rather than hidden
+    # in code.
+    fail-open: false
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
   endpoint:
     health:
       probes:

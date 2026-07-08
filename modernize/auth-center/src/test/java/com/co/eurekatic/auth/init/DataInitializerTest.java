@@ -64,7 +64,7 @@ class DataInitializerTest {
         DataInitializer seeder = newSeeder();
         seeder.run();
 
-        User admin = userRepository.findByUsername("testadmin").orElseThrow();
+        User admin = userRepository.findByEmail("admin@example.com").orElseThrow();
         assertThat(admin.isEnabled()).isTrue();
         assertThat(admin.isActive()).isTrue();
         assertThat(admin.isLdap()).isFalse();
@@ -107,12 +107,14 @@ class DataInitializerTest {
                 roleRepository,
                 passwordEncoder,
                 /* enabled */ false,
-                "testadmin",
                 "InitialP@ssw0rd-9876",
                 "admin@example.com"
         );
         seeder.run();
-        assertThat(userRepository.findByUsername("testadmin")).isEmpty();
+        // No admin row was created. (The string "testadmin" is
+        // a sentinel that no DataInitializer run would ever
+        // produce post-V12 since the column is gone.)
+        assertThat(userRepository.findByEmail("testadmin")).isEmpty();
     }
 
     @Test
@@ -122,12 +124,11 @@ class DataInitializerTest {
                 roleRepository,
                 passwordEncoder,
                 /* enabled */ true,
-                "testadmin",
                 /* adminPassword */ "",
                 "admin@example.com"
         );
         seeder.run();
-        assertThat(userRepository.findByUsername("testadmin")).isEmpty();
+        assertThat(userRepository.findByEmail("testadmin")).isEmpty();
     }
 
     @Test
@@ -137,12 +138,11 @@ class DataInitializerTest {
                 roleRepository,
                 passwordEncoder,
                 /* enabled */ true,
-                "testadmin",
                 /* adminPassword */ "CHANGE_ME",
                 "admin@example.com"
         );
         seeder.run();
-        assertThat(userRepository.findByUsername("testadmin")).isEmpty();
+        assertThat(userRepository.findByEmail("testadmin")).isEmpty();
     }
 
     private DataInitializer newSeeder() {
@@ -151,7 +151,6 @@ class DataInitializerTest {
                 roleRepository,
                 passwordEncoder,
                 /* enabled */ true,
-                "testadmin",
                 "InitialP@ssw0rd-9876",
                 "admin@example.com"
         );

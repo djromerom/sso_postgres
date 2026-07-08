@@ -2,6 +2,7 @@ package com.co.eurekatic.common.repository;
 
 import com.co.eurekatic.common.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
@@ -16,8 +17,6 @@ import java.util.Optional;
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
 
-    Optional<User> findByUsername(String username);
-
     Optional<User> findByEmail(String email);
 
     Optional<User> findByApiToken(String apiToken);
@@ -26,7 +25,21 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByTokenRestore(String tokenRestore);
 
-    boolean existsByUsername(String username);
-
     boolean existsByEmail(String email);
+
+    /**
+     * Loads a user with everything needed to compute effective roles in
+     * a single round-trip: direct roles, groups, and each group's roles.
+     * DISTINCT + Set collections avoid duplicate rows and
+     * MultipleBagFetchException. Used only by auth-center's
+     * EffectiveRolesResolver at token-issue time.
+     */
+    @Query("""
+           SELECT DISTINCT u FROM User u
+           LEFT JOIN FETCH u.roles
+           LEFT JOIN FETCH u.groups g
+           LEFT JOIN FETCH g.roles
+           WHERE u.email = :email
+           """)
+    Optional<User> findByEmailWithEffectiveRoles(String email);
 }

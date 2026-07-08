@@ -1,0 +1,31 @@
+package com.co.eurekatic.common.repository;
+
+import com.co.eurekatic.common.entity.App;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Spring Data JPA repository for {@link App}.
+ *
+ * <p>Uniqueness rule is {@code name} (the legacy
+ * {@code SSO_V2.APP.name} was UNIQUE NOT NULL). We pre-check
+ * with {@link #existsByName} for a friendlier 409 on insert;
+ * the DB-level constraint is the source of truth under
+ * concurrent inserts.
+ */
+@Repository
+public interface AppRepository extends JpaRepository<App, Long> {
+
+    boolean existsByName(String name);
+
+    Optional<App> findByName(String name);
+
+    /**
+     * Listing order — by {@code id} ASC keeps the UI stable
+     * across requests without relying on insertion order.
+     */
+    List<App> findAllByOrderByIdAsc();
+}

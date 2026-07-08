@@ -100,6 +100,27 @@ public class Group {
         this.users.remove(user);
     }
 
+    /**
+     * Roles this group grants. A user in this group gains these roles
+     * (in addition to their direct role_users roles) at token-issue
+     * time — see auth-center's EffectiveRolesResolver.
+     */
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "group_role",
+            joinColumns = @JoinColumn(name = "group_id"),
+            inverseJoinColumns = @JoinColumn(name = "role_id"))
+    @Setter(AccessLevel.NONE)
+    private Set<Role> roles = new HashSet<>();
+
+    public void addRole(Role role) {
+        this.roles.add(role);
+    }
+
+    public void removeRole(Role role) {
+        this.roles.remove(role);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

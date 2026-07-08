@@ -6,7 +6,7 @@
 # is built on the host (see /tmp/build-ssoadmin.sh) and bind-mounted
 # or COPY'd into the runtime image.
 
-FROM eclipse-temurin:21-jre-jammy
+FROM eclipse-temurin:25-jre-jammy
 WORKDIR /app
 
 RUN groupadd --system --gid 1000 app && \

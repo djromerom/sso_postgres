@@ -34,6 +34,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- Prometheus scrape endpoint. Version resolved by Boot 4 BOM. Exposed via /actuator/prometheus for the Grafana Alloy scraper. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
 
         <!-- Service discovery. Registers with Eureka so the gateway's
              dynamic route locator auto-creates /hello-service/** → lb://hello-service. -->

@@ -108,11 +108,19 @@ public class RoleAdminService {
         return userRepository.findAll().stream()
                 .map(u -> new UserRoleChecked(
                         u.getId(),
-                        u.getUsername(),
+                        u.getEmail(),
                         u.getFullName(),
                         memberIds.contains(u.getId())))
                 .toList();
     }
 
-    public record UserRoleChecked(Long userId, String username, String fullName, boolean checked) {}
+    /**
+     * Per-role checked-listing of users. The {@code username} slot
+     * was removed in the V12 migration — the field is bound to
+     * {@code email} (the login identifier; see {@code getEmail()}
+     * on the {@code User} entity). Field order matches the
+     * {@code UserRoleChecked} TS type in
+     * {@code admin-ui/src/api/types.ts}.
+     */
+    public record UserRoleChecked(Long userId, String email, String fullName, boolean checked) {}
 }

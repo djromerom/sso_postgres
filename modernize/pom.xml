@@ -38,7 +38,7 @@
         <jjwt.version>0.12.7</jjwt.version>
         <resilience4j.version>2.2.0</resilience4j.version>
         <postgresql.version>42.7.4</postgresql.version>
-        <testcontainers.version>1.21.3</testcontainers.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencyManagement>
@@ -118,5 +118,8 @@
         <module>api-gateway</module>
         <module>hello-service</module>
         <module>sso-admin</module>
+        <module>query-service</module>
+        <module>provisioner</module>
+        <module>notification-service</module>
     </modules>
 </project>
