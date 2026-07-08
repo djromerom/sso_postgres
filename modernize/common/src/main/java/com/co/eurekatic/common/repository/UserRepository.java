@@ -17,8 +17,6 @@ import java.util.Optional;
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
 
-    Optional<User> findByUsername(String username);
-
     Optional<User> findByEmail(String email);
 
     Optional<User> findByApiToken(String apiToken);
@@ -26,8 +24,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByTokenActivation(String tokenActivation);
 
     Optional<User> findByTokenRestore(String tokenRestore);
-
-    boolean existsByUsername(String username);
 
     boolean existsByEmail(String email);
 
@@ -43,7 +39,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
            LEFT JOIN FETCH u.roles
            LEFT JOIN FETCH u.groups g
            LEFT JOIN FETCH g.roles
-           WHERE u.username = :username
+           WHERE u.email = :email
            """)
-    Optional<User> findByUsernameWithEffectiveRoles(String username);
+    Optional<User> findByEmailWithEffectiveRoles(String email);
 }

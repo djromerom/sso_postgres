@@ -47,7 +47,7 @@
 set -euo pipefail
 
 GATEWAY="${GATEWAY:-http://localhost:8080}"
-ADMIN_USER="${SSO_ADMIN_USERNAME:-admin}"
+ADMIN_EMAIL="${SSO_ADMIN_EMAIL:-admin@example.com}"
 ADMIN_PASSWORD="${SSO_ADMIN_PASSWORD:-ChangeMe-Now-Please-123!}"
 
 PASS=0
@@ -64,7 +64,7 @@ echo ">>> Login (carries the Bearer token for the authenticated checks)"
 LOGIN_HTTP=$(curl -sS -o /tmp/al-login-body.$$ -w '%{http_code}' \
   -X POST "$GATEWAY/login" \
   -H "Content-Type: application/json" \
-  -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASSWORD\"}")
+  -d "{\"username\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
 if [ "$LOGIN_HTTP" = "200" ]; then
   ok "Login returns 200"
 else

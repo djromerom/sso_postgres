@@ -84,7 +84,7 @@ public class JsonLoginFilter extends AbstractAuthenticationProcessingFilter {
         try {
             LoginRequest body = mapper.readValue(request.getInputStream(), LoginRequest.class);
             UsernamePasswordAuthenticationToken token =
-                    UsernamePasswordAuthenticationToken.unauthenticated(body.username(), body.password());
+                    UsernamePasswordAuthenticationToken.unauthenticated(body.email(), body.password());
             token.setDetails(authenticationDetailsSource.buildDetails(request));
             return getAuthenticationManager().authenticate(token);
         } catch (IOException e) {
@@ -100,13 +100,17 @@ public class JsonLoginFilter extends AbstractAuthenticationProcessingFilter {
             throws IOException, ServletException {
 
         Object principal = authResult.getPrincipal();
-        String username = (principal instanceof User u) ? u.getUsername() : authResult.getName();
+        // Email is the login identifier since the V12 migration
+        // (the prior username column is gone). We read it off the
+        // entity's email field (which UserDetails.getUsername() also
+        // returns — both are kept consistent).
+        String email = (principal instanceof User u) ? u.getEmail() : authResult.getName();
         String userId = (principal instanceof User u && u.getId() != null)
                 ? String.valueOf(u.getId())
-                : username;
-        Set<String> roles = effectiveRoles.forUsername(username);
+                : email;
+        Set<String> roles = effectiveRoles.forEmail(email);
 
-        String accessToken = jwt.issueAccessToken(username, roles);
+        String accessToken = jwt.issueAccessToken(email, roles);
 
         // Mint a new refresh token via the store. Each login starts a
         // fresh family so multi-device sessions are independent. If the
@@ -117,7 +121,7 @@ public class JsonLoginFilter extends AbstractAuthenticationProcessingFilter {
         try {
             String familyId = UUID.randomUUID().toString().replace("-", "");
             RefreshTokenStore.RefreshTokenHandle handle =
-                    refreshTokenStore.mint(username, userId, familyId);
+                    refreshTokenStore.mint(email, userId, familyId);
             refreshToken = handle.rawToken();
             ttlSeconds = handle.ttlSeconds();
         } catch (RefreshUnavailableException e) {

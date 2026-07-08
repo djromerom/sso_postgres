@@ -48,10 +48,11 @@ public class JwtTokenService {
 
     /**
      * Issue a short-lived access token. The {@code sub} claim carries the
-     * username; the {@code roles} claim carries the role names.
+     * user's email (the login identifier since the V12 migration); the
+     * {@code roles} claim carries the role names.
      */
-    public String issueAccessToken(String username, Set<String> roles) {
-        return build(username, roles, "access", props.accessTokenTtlSeconds());
+    public String issueAccessToken(String email, Set<String> roles) {
+        return build(email, roles, "access", props.accessTokenTtlSeconds());
     }
 
     /**
@@ -59,14 +60,14 @@ public class JwtTokenService {
      * access token but a different {@code typ} so gateways and clients
      * can distinguish them and apply different rate limits / cache TTLs.
      */
-    public String issueApiToken(String username, Set<String> roles) {
-        return build(username, roles, "api", props.apiTokenTtlSeconds());
+    public String issueApiToken(String email, Set<String> roles) {
+        return build(email, roles, "api", props.apiTokenTtlSeconds());
     }
 
-    private String build(String username, Set<String> roles, String tokenType, long ttlSeconds) {
+    private String build(String email, Set<String> roles, String tokenType, long ttlSeconds) {
         Instant now = Instant.now();
         return Jwts.builder()
-                .subject(username)
+                .subject(email)
                 .issuer(props.issuer())
                 .claim(CLAIM_ROLES, List.copyOf(roles == null ? Set.of() : roles))
                 .claim(CLAIM_TOKEN_TYPE, tokenType)

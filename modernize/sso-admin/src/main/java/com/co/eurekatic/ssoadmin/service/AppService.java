@@ -167,7 +167,11 @@ public class AppService {
                 .map(User::getId)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         return userRepo.findAll().stream()
-                .map(u -> new UserChecked(u.getId(), u.getUsername(), bound.contains(u.getId())))
+                .map(u -> new UserChecked(
+                        u.getId(),
+                        u.getFullName(),
+                        u.getEmail(),
+                        bound.contains(u.getId())))
                 .toList();
     }
 
@@ -253,7 +257,13 @@ public class AppService {
     // POST /app/{id}/role/undefined at runtime — see
     // admin-ui/scripts/smoke-apps-browser-flow.md.)
     public record RoleChecked(Long roleId, String name, boolean checked) {}
-    public record UserChecked(Long userId, String username, boolean checked) {}
+    /**
+     * Per-app checked-listing of users. The {@code username}
+     * slot was removed in the V12 migration — we expose
+     * {@code fullName} + {@code email} (matching the
+     * {@code AppUserChecked} TS type in admin-ui/src/api/types.ts).
+     */
+    public record UserChecked(Long userId, String fullName, String email, boolean checked) {}
     public record RouteChecked(Long routeId, String name, String path, boolean checked) {}
     public record MicroserviceChecked(Long microserviceId, String serviceId, String kind, boolean checked) {}
 }

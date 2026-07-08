@@ -144,7 +144,7 @@ class ApiGatewayIntegrationTest {
         // @EnableConfigurationProperties(JwtProperties.class)).
         String token = jwt.issueAccessToken("alice", new LinkedHashSet<>(Set.of("USER")));
         assertThat(token).isNotBlank();
-        assertThat(jwt.parse(token).username()).isEqualTo("alice");
+        assertThat(jwt.parse(token).email()).isEqualTo("alice");
         assertThat(jwtProperties.headerName()).isEqualTo("Authorization");
         assertThat(jwtProperties.tokenPrefix()).isEqualTo("Bearer ");
     }

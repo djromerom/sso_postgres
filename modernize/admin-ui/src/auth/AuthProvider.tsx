@@ -15,11 +15,17 @@ import { authApi } from "@/api/endpoints";
  * the closure in {@link apiClient} always reads the latest value
  * without forcing every component to re-render on token change.
  * Components only re-render when `status` or `user` change.
+ *
+ * <p>Post-V12, the login identifier (and the {@code sub} JWT claim)
+ * is the user's email, not a separate {@code username}. The SPA
+ * mirrors that — there's no separate username concept. The
+ * {@link AuthUser.email} field carries the identifier everywhere
+ * the UI used to render a username label.
  */
 export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
 export interface AuthUser {
-  username: string;
+  email: string;
   roles: string[];
 }
 
@@ -55,7 +61,7 @@ function reducer(state: AuthState, action: Action): AuthState {
 }
 
 export interface AuthContextValue extends AuthState {
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   clearError: () => void;
   /**
@@ -117,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // we trust the token's presence as "logged in".
           dispatch({
             type: "LOGIN_SUCCESS",
-            user: { username: "(you)", roles: [] },
+            user: { email: "(you)", roles: [] },
           });
         } else {
           dispatch({ type: "LOGOUT" });
@@ -131,17 +137,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = useCallback(async (username: string, password: string): Promise<boolean> => {
+  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
     try {
-      const resp = await authApi.login({ username, password });
+      const resp = await authApi.login({ email, password });
       accessTokenRef.current = resp.token;
-      // For now, hydrate user with what we have. A real /whoami
-      // endpoint would be cleaner; the backend's user info is
-      // embedded in the JWT but decoding it client-side would
-      // require knowing the (server-side) structure.
+      // Hydrate the visible identifier with the email that just
+      // authenticated. Roles are fetched lazily by endpoints that
+      // need them (auth-gated views).
       dispatch({
         type: "LOGIN_SUCCESS",
-        user: { username, roles: [] },
+        user: { email, roles: [] },
       });
       return true;
     } catch (err) {

@@ -35,12 +35,13 @@ import java.util.List;
  * gated by {@code ROLE_ADMIN} and used by the admin UI to manage
  * the catalog rows (CRUD + role bindings).
  *
- * <p>Username comes from the {@link AuthPrincipal} already in the
+ * <p>Email comes from the {@link AuthPrincipal} already in the
  * {@link SecurityContextHolder}, which the
  * {@code JwtAuthenticationFilter} populates before this handler
  * runs. We don't re-parse the JWT here — the gateway has
  * already validated the signature when the access token was
- * issued.
+ * issued. Email IS the unique login identifier since the V12
+ * migration (the prior {@code username} column is gone).
  */
 @RestController
 public class QueryCatalogController {
@@ -53,8 +54,8 @@ public class QueryCatalogController {
 
     @GetMapping("/getQuery")
     public ResponseEntity<QueryDefinition> getQuery(@RequestParam String uuid) {
-        String username = currentUsername();
-        return ResponseEntity.ok(service.resolve(uuid, username));
+        String email = currentEmail();
+        return ResponseEntity.ok(service.resolve(uuid, email));
     }
 
     /**
@@ -67,10 +68,10 @@ public class QueryCatalogController {
      */
     @GetMapping("/myQueries")
     public List<QueryDefinition> myQueries(@RequestParam(required = false) Long microserviceId) {
-        return service.listForCaller(currentUsername(), microserviceId);
+        return service.listForCaller(currentEmail(), microserviceId);
     }
 
-    private static String currentUsername() {
+    private static String currentEmail() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !(auth.getPrincipal() instanceof AuthPrincipal principal)) {
             // Should never happen — SecurityConfig marks
@@ -79,6 +80,6 @@ public class QueryCatalogController {
             // mode consistent with the role check below.
             throw new AccessDeniedException("No autenticado");
         }
-        return principal.username();
+        return principal.email();
     }
 }

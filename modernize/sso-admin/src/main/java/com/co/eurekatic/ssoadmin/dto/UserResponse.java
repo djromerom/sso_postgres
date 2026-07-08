@@ -8,11 +8,12 @@ import java.util.stream.Collectors;
 
 /**
  * Response shape for {@code GET /getUsers} and the create /
- * update endpoints. Never exposes the password hash.
+ * update endpoints. Never exposes the password hash. The
+ * {@code username} slot was removed in the V12 migration —
+ * email IS the unique login identifier.
  */
 public record UserResponse(
         Long id,
-        String username,
         String fullName,
         String email,
         boolean active,
@@ -25,7 +26,6 @@ public record UserResponse(
                 .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
         return new UserResponse(
                 u.getId(),
-                u.getUsername(),
                 u.getFullName(),
                 u.getEmail(),
                 u.isActive(),

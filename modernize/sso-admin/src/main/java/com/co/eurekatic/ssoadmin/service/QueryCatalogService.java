@@ -2,6 +2,7 @@ package com.co.eurekatic.ssoadmin.service;
 
 import com.co.eurekatic.common.entity.Query;
 import com.co.eurekatic.common.entity.Role;
+import com.co.eurekatic.common.entity.User;
 import com.co.eurekatic.common.repository.QueryRepository;
 import com.co.eurekatic.common.repository.UserRepository;
 import com.co.eurekatic.ssoadmin.dto.QueryDefinition;
@@ -39,7 +40,7 @@ import java.util.stream.Collectors;
  * query method with {@code @EntityGraph(attributePaths = "roles")}.
  *
  * <p>Public-endpoint bypass: if {@link Query#isPublicEnd()} is true,
- * the username is not required to have a bound role — any
+ * the caller is not required to have a bound role — any
  * authenticated caller may resolve it. Captcha is still enforced
  * downstream by {@code query-service} when the
  * {@code QueryDefinition#captcha()} flag is true.
@@ -58,8 +59,8 @@ public class QueryCatalogService {
 
     /**
      * Resolves the query definition for the given uuid, checking
-     * that {@code username} has at least one role bound to the
-     * query (or the query is {@code publicEnd}).
+     * that the caller (identified by their email) has at least
+     * one role bound to the query (or the query is {@code publicEnd}).
      *
      * @throws AccessDeniedException if the query is unknown OR
      *         the user has no role that grants access. We
@@ -69,12 +70,12 @@ public class QueryCatalogService {
      *         not a discovery service.
      */
     @Transactional(readOnly = true)
-    public QueryDefinition resolve(String uuid, String username) {
+    public QueryDefinition resolve(String uuid, String email) {
         Query q = queryRepo.findByUuid(uuid)
                 .orElseThrow(() -> new AccessDeniedException(
                         "No tiene acceso al query: " + uuid));
 
-        if (hasAdminRole(username) || q.isPublicEnd() || userHasAccessTo(q, username)) {
+        if (hasAdminRole(email) || q.isPublicEnd() || userHasAccessTo(q, email)) {
             return QueryDefinition.fromEntity(q);
         }
 
@@ -100,13 +101,13 @@ public class QueryCatalogService {
      * is a legitimate response.
      */
     @Transactional(readOnly = true)
-    public List<QueryDefinition> listForCaller(String username, Long microserviceId) {
-        boolean isAdmin = hasAdminRole(username);
+    public List<QueryDefinition> listForCaller(String email, Long microserviceId) {
+        boolean isAdmin = hasAdminRole(email);
         List<Query> rows = (microserviceId == null)
                 ? queryRepo.findAllByOrderByIdAsc()
                 : queryRepo.findAllByMicroservice_IdOrderByIdAsc(microserviceId);
         return rows.stream()
-                .filter(q -> isAdmin || q.isPublicEnd() || userHasAccessTo(q, username))
+                .filter(q -> isAdmin || q.isPublicEnd() || userHasAccessTo(q, email))
                 .map(QueryDefinition::fromEntity)
                 .toList();
     }
@@ -115,7 +116,7 @@ public class QueryCatalogService {
 
     /**
      * Per-row authorization: the user's roles must intersect the
-     * query's bound roles. The username → roles lookup goes
+     * query's bound roles. The email → roles lookup goes
      * through {@code userRepo} (which loads {@code User.roles}
      * EAGER — see {@code User.java}) so no lazy issue here.
      *
@@ -124,8 +125,8 @@ public class QueryCatalogService {
      * in one place. ADMIN bypass happens upstream of this method —
      * callers check {@link #hasAdminRole(String)} first.
      */
-    private boolean userHasAccessTo(Query q, String username) {
-        Set<String> userRoles = userRepo.findByUsername(username)
+    private boolean userHasAccessTo(Query q, String email) {
+        Set<String> userRoles = userRepo.findByEmail(email)
                 .map(u -> u.getRoles().stream()
                         .map(Role::getName)
                         .collect(Collectors.toSet()))
@@ -145,13 +146,13 @@ public class QueryCatalogService {
      * existing admin CRUD surface ({@code QueryAdminController}),
      * which is gated by {@code hasRole("ADMIN")} at the URL matcher.
      *
-     * <p>If the username does not exist (deleted user, LDAP
+     * <p>If the email does not exist (deleted user, LDAP
      * deprovisioning race) we treat them as non-admin and let the
      * per-row filter apply — a 403 here would be a privilege
      * escalation for a deleted user.
      */
-    private boolean hasAdminRole(String username) {
-        Optional<com.co.eurekatic.common.entity.User> userOpt = userRepo.findByUsername(username);
+    private boolean hasAdminRole(String email) {
+        Optional<User> userOpt = userRepo.findByEmail(email);
         if (userOpt.isEmpty()) return false;
         return userOpt.get().getRoles().stream()
                 .anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getName()));

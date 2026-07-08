@@ -66,9 +66,9 @@ public class AuthController {
         if (!user.isEnabled()) {
             throw new AccessDeniedException("User is disabled");
         }
-        Set<String> roles = effectiveRoles.forUsername(user.getUsername());
+        Set<String> roles = effectiveRoles.forEmail(user.getEmail());
         return ResponseEntity.ok(new com.co.eurekatic.common.dto.AuthDtos.TokenResponse(
-                jwt.issueApiToken(user.getUsername(), roles),
+                jwt.issueApiToken(user.getEmail(), roles),
                 user.getApiToken(),
                 86_400L));
     }
@@ -80,9 +80,9 @@ public class AuthController {
      */
     @GetMapping("/getInfoUser")
     public ResponseEntity<UserSummary> getInfoUser(Authentication authentication) {
-        String username = principalName(authentication);
-        User u = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException(username));
+        String email = principalName(authentication);
+        User u = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException(email));
         return ResponseEntity.ok(toSummary(u));
     }
 
@@ -103,17 +103,18 @@ public class AuthController {
     /* ====================== helpers ====================== */
 
     /**
-     * Pulls the username off the {@link Authentication} regardless of
+     * Pulls the email off the {@link Authentication} regardless of
      * whether the principal is a {@link User} entity (login flow) or
-     * an {@link AuthPrincipal} record (token-bearer flow).
+     * an {@link AuthPrincipal} record (token-bearer flow). Email is
+     * the unique login identifier since the V12 migration.
      */
     private String principalName(Authentication authentication) {
         if (authentication == null || authentication.getPrincipal() == null) {
             throw new AccessDeniedException("Missing authentication");
         }
         Object p = authentication.getPrincipal();
-        if (p instanceof User u) return u.getUsername();
-        if (p instanceof AuthPrincipal ap) return ap.username();
+        if (p instanceof User u) return u.getEmail();
+        if (p instanceof AuthPrincipal ap) return ap.email();
         return authentication.getName();
     }
 
@@ -127,12 +128,13 @@ public class AuthController {
      * {@link UserSummary#roles()} intentionally still reflects only
      * the user's DIRECT roles (via {@link #roleNames(User)}), not
      * the group-effective set — this summary is a profile view, not
-     * a token-issuing path, so it's left as-is.
+     * a token-issuing path, so it's left as-is. The
+     * {@code username} slot was removed in the V12 migration; email
+     * IS the unique login identifier.
      */
     private UserSummary toSummary(User u) {
         return new UserSummary(
                 u.getId(),
-                u.getUsername(),
                 u.getEmail(),
                 u.getFullName(),
                 u.isEnabled(),

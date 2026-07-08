@@ -29,7 +29,7 @@
 set -euo pipefail
 
 GATEWAY="${GATEWAY:-http://localhost:8080}"
-ADMIN_USER="${SSO_ADMIN_USERNAME:-admin}"
+ADMIN_EMAIL="${SSO_ADMIN_EMAIL:-admin@example.com}"
 ADMIN_PASSWORD="${SSO_ADMIN_PASSWORD:-ChangeMe-Now-Please-123!}"
 
 PASS=0
@@ -54,10 +54,10 @@ assert_http() {
 
 # ---------- 1. login ----------
 hr
-echo ">>> 1. Logging in as $ADMIN_USER via $GATEWAY/login"
+echo ">>> 1. Logging in as $ADMIN_EMAIL via $GATEWAY/login"
 LOGIN_RESPONSE=$(curl -sS -X POST "$GATEWAY/login" \
   -H "Content-Type: application/json" \
-  -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASSWORD\"}")
+  -d "{\"username\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
 JWT=$(echo "$LOGIN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 info "got JWT (${#JWT} chars)"
 AUTH=(-H "Authorization: Bearer $JWT" -H "Content-Type: application/json")

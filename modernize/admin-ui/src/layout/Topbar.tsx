@@ -19,7 +19,7 @@ export function Topbar() {
         <div className="flex items-center gap-3 text-sm">
           {user ? (
             <>
-              <span className="text-slate-600">{user.username}</span>
+              <span className="text-slate-600">{user.email}</span>
               <button
                 type="button"
                 onClick={() => void logout()}

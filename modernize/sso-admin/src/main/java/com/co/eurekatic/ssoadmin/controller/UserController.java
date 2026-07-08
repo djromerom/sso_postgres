@@ -95,9 +95,16 @@ public class UserController {
         return service.getUsers();
     }
 
-    @GetMapping("/getRolesByUsername")
-    public List<String> getRolesByUsername(@RequestParam String username) {
-        return service.getRolesByUsername(username);
+    /**
+     * Returns the role names for the user identified by email.
+     * Email is the unique login identifier since the V12
+     * migration (the prior {@code username} column is gone).
+     * Renamed from the legacy {@code getRolesByUsername} so the
+     * URL reflects the actual lookup key.
+     */
+    @GetMapping("/getRolesByEmail")
+    public List<String> getRolesByEmail(@RequestParam String email) {
+        return service.getRolesByEmail(email);
     }
 
     @GetMapping("/user/roles")

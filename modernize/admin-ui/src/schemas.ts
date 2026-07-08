@@ -8,12 +8,16 @@ import { z } from "zod";
  * server-side contract.
  */
 
+/**
+ * Schema for the create/edit user form. The {@code username}
+ * field is gone since the V12 migration — email IS the unique
+ * login identifier, so it now carries both the role (login)
+ * and the contact-information obligation. The wire shape sent
+ * to {@code POST /sso-admin/createAccount} is exactly
+ * {@code {fullName, email, roleNames}}; see
+ * {@code CreateAccountRequest} in {@code src/api/types.ts}.
+ */
 export const userFormSchema = z.object({
-  username: z
-    .string()
-    .min(3, "Mínimo 3 caracteres")
-    .max(50)
-    .regex(/^[a-zA-Z0-9._-]+$/, "Solo letras, números, . _ -"),
   fullName: z.string().min(1, "Requerido").max(120),
   email: z.string().email("Email inválido").max(120),
   // No password field. The user picks their password at the

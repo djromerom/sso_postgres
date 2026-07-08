@@ -27,7 +27,7 @@ import java.util.UUID;
  * <h2>Redis layout</h2>
  * <ul>
  *   <li>{@code <prefix>:hash:<sha256-hex>} — STRING of JSON
- *       {@code {"username":"...","userId":"...","familyId":"...","issuedAt":...}}.</li>
+ *       {@code {"email":"...","userId":"...","familyId":"...","issuedAt":...}}.</li>
  *   <li>{@code <prefix>:family:<familyId>} — SET of hashes for every
  *       token minted in this family. Cleared atomically on reuse
  *       detection or on explicit logout.</li>
@@ -76,13 +76,13 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
     /* ====================== mint ====================== */
 
     @Override
-    public RefreshTokenHandle mint(String username, String userId, String familyId) {
+    public RefreshTokenHandle mint(String email, String userId, String familyId) {
         String raw = UUID.randomUUID().toString().replace("-", "");
         String hash = sha256Hex(raw);
         Instant issuedAt = Instant.now();
         long ttl = props.ttlSeconds();
 
-        TokenRecord record = new TokenRecord(username, userId, familyId, issuedAt.getEpochSecond());
+        TokenRecord record = new TokenRecord(email, userId, familyId, issuedAt.getEpochSecond());
         String json;
         try {
             json = mapper.writeValueAsString(record);
@@ -153,10 +153,10 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
             }
             if (tombstone != null) {
                 String[] parts = tombstone.split("\\|", 2);
-                String username = parts.length > 0 ? parts[0] : "?";
+                String email = parts.length > 0 ? parts[0] : "?";
                 String familyId = parts.length > 1 ? parts[1] : "?";
                 log.warn("Refresh-token reuse detected via tombstone — user={} family={}",
-                        username, shortFamily(familyId));
+                        email, shortFamily(familyId));
                 // Wipe the entire family — RFC 9700 §4.14.2 mandates
                 // that any subsequent live token in the family be
                 // invalidated as a side effect of detecting the
@@ -170,7 +170,7 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
                     // ReuseDetected which causes the controller to
                     // 401 + clear the cookie.
                 }
-                return new RefreshOutcome.ReuseDetected(username, familyId);
+                return new RefreshOutcome.ReuseDetected(email, familyId);
             }
             return new RefreshOutcome.NotFound();
         }
@@ -202,12 +202,13 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
                     }
                     operations.opsForSet().remove(familyKey(existing.familyId()), hash);
                     operations.delete(familyKey(existing.familyId()));
-                    // Tombstone: "u|familyId" with the configured TTL.
-                    // A subsequent rotate() call against this same
-                    // hash will see the tombstone, NOT find the live
-                    // record, and return ReuseDetected.
+                    // Tombstone: "email|familyId" with the
+                    // configured TTL. A subsequent rotate() call
+                    // against this same hash will see the tombstone,
+                    // NOT find the live record, and return
+                    // ReuseDetected.
                     operations.opsForValue().set(replayKey(hash),
-                            existing.username() + "|" + existing.familyId(),
+                            existing.email() + "|" + existing.familyId(),
                             Duration.ofSeconds(TOMBSTONE_TTL_SECONDS));
                     return operations.exec();
                 }
@@ -216,7 +217,7 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
                 // MULTI/EXEC was discarded (e.g. WATCH conflict). Treat
                 // as a reuse event — the token was live enough that we
                 // got past step 1, and the EXEC was aborted.
-                return new RefreshOutcome.ReuseDetected(existing.username(), existing.familyId());
+                return new RefreshOutcome.ReuseDetected(existing.email(), existing.familyId());
             }
         } catch (DataAccessException e) {
             log.error("Redis unavailable on rotate (write) family={}", shortFamily(existing.familyId()), e);
@@ -225,7 +226,7 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
 
         // Step 3: mint the replacement in the SAME family.
         try {
-            RefreshTokenHandle next = mint(existing.username(), existing.userId(), existing.familyId());
+            RefreshTokenHandle next = mint(existing.email(), existing.userId(), existing.familyId());
             log.info("Refresh token rotated family={} userId={}",
                     shortFamily(existing.familyId()), existing.userId());
             return new RefreshOutcome.Rotated(next);
@@ -256,7 +257,7 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
         }
         try {
             TokenRecord record = mapper.readValue(json, TokenRecord.class);
-            return new RefreshTokenLookup(record.username(), record.userId(), record.familyId(),
+            return new RefreshTokenLookup(record.email(), record.userId(), record.familyId(),
                     Instant.ofEpochSecond(record.issuedAt()));
         } catch (JsonProcessingException e) {
             log.error("Corrupt refresh-token record on peek hash_prefix={}", hashPrefix(hash), e);
@@ -380,6 +381,6 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
     }
 
     /** JSON record stored at {@code <prefix>:hash:<sha256-hex>}. */
-    public record TokenRecord(String username, String userId, String familyId, long issuedAt) {
+    public record TokenRecord(String email, String userId, String familyId, long issuedAt) {
     }
 }

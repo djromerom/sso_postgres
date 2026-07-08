@@ -24,9 +24,9 @@ public class EffectiveRolesResolver {
     }
 
     @Transactional(readOnly = true)
-    public Set<String> forUsername(String username) {
+    public Set<String> forEmail(String email) {
         Set<String> names = new LinkedHashSet<>();
-        userRepository.findByUsernameWithEffectiveRoles(username).ifPresent(user -> {
+        userRepository.findByEmailWithEffectiveRoles(email).ifPresent(user -> {
             user.getRoles().forEach(r -> names.add(r.getName()));
             user.getGroups().forEach(g -> g.getRoles().forEach(r -> names.add(r.getName())));
         });

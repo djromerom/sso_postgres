@@ -36,9 +36,10 @@ public interface RefreshTokenStore {
      * is supplied by the caller (one family per login) and is used
      * to bind rotated tokens together for reuse-detection.
      *
-     * <p>{@code username} is carried alongside the token so the
+     * <p>{@code email} is carried alongside the token so the
      * controller can mint a new access token without a DB hit per
-     * refresh.
+     * refresh. Email is the login identifier since the V12
+     * migration (the prior {@code username} column is gone).
      *
      * @return a {@link RefreshTokenHandle} containing the raw token
      *         to set in the cookie + the opaque store-internal IDs
@@ -46,7 +47,7 @@ public interface RefreshTokenStore {
      *         unreachable; the caller MUST fail closed (503 on
      *         login, 401 on refresh — never fall back to a bypass)
      */
-    RefreshTokenHandle mint(String username, String userId, String familyId);
+    RefreshTokenHandle mint(String email, String userId, String familyId);
 
     /**
      * Atomically validate + invalidate a refresh token and mint its
@@ -113,7 +114,7 @@ public interface RefreshTokenStore {
      * {@link #peek}.
      */
     record RefreshTokenLookup(
-            String username,
+            String email,
             String userId,
             String familyId,
             Instant issuedAt) {
@@ -134,7 +135,7 @@ public interface RefreshTokenStore {
          * implementation has wiped the entire family as a defensive
          * measure; the caller MUST return 401 and clear the cookie.
          */
-        record ReuseDetected(String username, String familyId) implements RefreshOutcome {}
+        record ReuseDetected(String email, String familyId) implements RefreshOutcome {}
 
         /** The token was never valid (expired, evicted, never minted). */
         record NotFound() implements RefreshOutcome {}

@@ -261,7 +261,13 @@ function UsersTab({ appId }: { appId: number }) {
       emptyText="No hay usuarios creados."
       toggleIdPrefix="user-toggle"
       searchPlaceholder="Buscar usuario…"
-      getRowLabel={(u) => u.username}
+      // Post-V12 the per-app user binding renders the
+      // fullName when set, falling back to email (since the
+      // `username` slot no longer exists in
+      // `AppUserChecked`). The search still matches
+      // against `email` so admins can locate rows by either
+      // identifier.
+      getRowLabel={(u) => u.fullName ?? u.email}
       getRowId={(u) => u.userId}
       getRowChecked={(u) => u.checked}
       onToggle={(userId, checked) => {
@@ -272,7 +278,7 @@ function UsersTab({ appId }: { appId: number }) {
         }
       }}
       bulkAction={appBulkAction(appId, bind, unbind, "userId", "user-bulk")}
-      renderRow={(u) => u.username}
+      renderRow={(u) => u.fullName ?? u.email}
     />
   );
 }

@@ -131,7 +131,7 @@ class AccountActivationEnablesLoginIntegrationTest {
         userRepository.deleteAll();
 
         User u = new User();
-        u.setUsername("charlie");
+        u.setEmail("charlie");
         u.setEmail("charlie@example.com");
         u.setFullName("Charlie Pending");
         // Mirrors UserAdminService.createAccount lines 103-110

@@ -20,12 +20,11 @@ public final class AuthDtos {
     }
 
     /**
-     * Login request body. Simplified from the legacy {@code UserAuth}
-     * (which also carried {@code app_name}); the modernized API-token login
-     * uses a separate endpoint.
+     * Login request body. The login identifier is now email (the
+     * {@code username} column is gone since the V12 migration).
      */
     public record LoginRequest(
-            @NotBlank @Size(min = 1, max = 80) String username,
+            @NotBlank @Email @Size(max = 200) String email,
             @NotBlank @Size(min = 1, max = 200) String password) {
     }
 
@@ -42,11 +41,12 @@ public final class AuthDtos {
     /**
      * Lightweight public projection of the authenticated user. Never includes
      * the password hash. {@code roles} is the set of role names (not
-     * "ROLE_USER"-prefixed).
+     * "ROLE_USER"-prefixed). The {@code username} slot was removed in
+     * the V12 migration: email IS the unique login identifier, so the
+     * duplicate field served no purpose.
      */
     public record UserSummary(
             Long id,
-            String username,
             String email,
             String fullName,
             boolean enabled,
@@ -56,10 +56,11 @@ public final class AuthDtos {
 
     /**
      * Account creation request. Carries the minimum to create a pending
-     * account; the actual password is set during activation.
+     * account; the actual password is set during activation. The
+     * {@code username} slot was removed in the V12 migration — the
+     * login identifier is now {@link #email}.
      */
     public record CreateAccountRequest(
-            @NotBlank @Size(min = 1, max = 80) String username,
             @NotBlank @Email @Size(max = 200) String email,
             @Size(max = 200) String fullName) {
     }

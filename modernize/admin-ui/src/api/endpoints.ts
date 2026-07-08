@@ -64,8 +64,13 @@ export const authApi = {
 
 export const usersApi = {
   list: () => apiClient.get<UserResponse[]>("/sso-admin/getUsers"),
-  getRolesByUsername: (username: string) =>
-    apiClient.get<string[]>(`/sso-admin/getRolesByUsername?username=${encodeURIComponent(username)}`),
+  // The backend's user-role-by-username endpoint was renamed
+  // getRolesByEmail in the V12 refactor (email is the unique
+  // login identifier). It's path-based, lives under
+  // /sso-admin/getRolesByEmail?email=... and returns a string
+  // list of role names bound to that user.
+  getRolesByEmail: (email: string) =>
+    apiClient.get<string[]>(`/sso-admin/getRolesByEmail?email=${encodeURIComponent(email)}`),
   getRolesByUserId: (userId: number) =>
     apiClient.get<RoleResponse[]>(`/sso-admin/user/roles?userId=${userId}`),
   getRolesChecked: (userId: number) =>

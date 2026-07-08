@@ -11,17 +11,22 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+import java.util.regex.Pattern;
+
 /**
  * Seeds the database with a default admin user on first startup so
  * the system is usable out of the box. The seed is idempotent — if
- * an admin user with the configured username already exists, the
- * seeder is a no-op.
+ * an admin user with the configured email already exists, the seeder
+ * is a no-op.
+ *
+ * <p>Since the V12 migration the {@code username} column is gone —
+ * email IS the login identifier, so the seeder only needs the
+ * admin's email and password.
  *
  * <p>Configuration (with defaults):
  * <pre>
  * sso:
  *   bootstrap:
- *     admin-username: ${SSO_ADMIN_USERNAME:admin}
  *     admin-password: ${SSO_ADMIN_PASSWORD:admin}
  *     admin-email:    ${SSO_ADMIN_EMAIL:admin@example.com}
  *     enabled:        ${SSO_BOOTSTRAP_ADMIN:true}
@@ -37,11 +42,14 @@ public class DataInitializer implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DataInitializer.class);
 
+    /** Practical subset of RFC-5322; same regex the user CRUD path uses. */
+    private static final Pattern EMAIL_REGEX =
+            Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final boolean enabled;
-    private final String adminUsername;
     private final String adminPassword;
     private final String adminEmail;
 
@@ -49,14 +57,12 @@ public class DataInitializer implements CommandLineRunner {
                            RoleRepository roleRepository,
                            PasswordEncoder passwordEncoder,
                            @Value("${sso.bootstrap.enabled:true}") boolean enabled,
-                           @Value("${sso.bootstrap.admin-username:admin}") String adminUsername,
                            @Value("${sso.bootstrap.admin-password:admin}") String adminPassword,
                            @Value("${sso.bootstrap.admin-email:admin@example.com}") String adminEmail) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.enabled = enabled;
-        this.adminUsername = adminUsername;
         this.adminPassword = adminPassword;
         this.adminEmail = adminEmail;
     }
@@ -72,8 +78,13 @@ public class DataInitializer implements CommandLineRunner {
                     + "Set SSO_ADMIN_PASSWORD or change sso.bootstrap.admin-password to enable.");
             return;
         }
-        if (userRepository.existsByUsername(adminUsername)) {
-            log.info("DataInitializer: user '{}' already exists — skipping admin seed", adminUsername);
+        if (adminEmail == null || !EMAIL_REGEX.matcher(adminEmail).matches()) {
+            log.warn("DataInitializer: admin email '{}' is unset or not a valid email — skipping admin seed. "
+                    + "Set SSO_ADMIN_EMAIL to a valid address to enable.", adminEmail);
+            return;
+        }
+        if (userRepository.existsByEmail(adminEmail)) {
+            log.info("DataInitializer: user '{}' already exists — skipping admin seed", adminEmail);
             return;
         }
 
@@ -81,7 +92,6 @@ public class DataInitializer implements CommandLineRunner {
         Role userRole = ensureRole("USER", "Standard user");
 
         User admin = new User();
-        admin.setUsername(adminUsername);
         admin.setEmail(adminEmail);
         admin.setFullName("Default Administrator");
         admin.setPassword(passwordEncoder.encode(adminPassword));
@@ -92,7 +102,7 @@ public class DataInitializer implements CommandLineRunner {
         admin.addRole(userRole);
         userRepository.save(admin);
 
-        log.info("DataInitializer: created default admin user '{}' with roles [USER, ADMIN]", adminUsername);
+        log.info("DataInitializer: created default admin user '{}' with roles [USER, ADMIN]", adminEmail);
     }
 
     private Role ensureRole(String name, String description) {

@@ -24,23 +24,23 @@ class EffectiveRolesResolverTest {
     @Test
     void unionsDirectAndGroupRolesDeduplicated() {
         User u = new User();
-        u.setUsername("alice");
+        u.setEmail("alice");
         u.addRole(role("USER"));            // direct
         Group g = new Group("ops");
         g.addRole(role("QUERY_READER"));    // via group
         g.addRole(role("USER"));            // duplicate of direct
         u.getGroups().add(g);
 
-        when(repo.findByUsernameWithEffectiveRoles("alice")).thenReturn(Optional.of(u));
+        when(repo.findByEmailWithEffectiveRoles("alice")).thenReturn(Optional.of(u));
 
-        Set<String> roles = resolver.forUsername("alice");
+        Set<String> roles = resolver.forEmail("alice");
 
         assertThat(roles).containsExactlyInAnyOrder("USER", "QUERY_READER");
     }
 
     @Test
     void unknownUserYieldsEmptySet() {
-        when(repo.findByUsernameWithEffectiveRoles("ghost")).thenReturn(Optional.empty());
-        assertThat(resolver.forUsername("ghost")).isEqualTo(new LinkedHashSet<String>());
+        when(repo.findByEmailWithEffectiveRoles("ghost")).thenReturn(Optional.empty());
+        assertThat(resolver.forEmail("ghost")).isEqualTo(new LinkedHashSet<String>());
     }
 }

@@ -111,7 +111,7 @@ class GroupRolesInTokenIntegrationTest {
         groupRepository.save(ops);
 
         User bob = new User();
-        bob.setUsername("bob");
+        bob.setEmail("bob");
         bob.setEmail("bob@example.com");
         bob.setFullName("Bob Example");
         bob.setPassword(passwordEncoder.encode("s3cret"));

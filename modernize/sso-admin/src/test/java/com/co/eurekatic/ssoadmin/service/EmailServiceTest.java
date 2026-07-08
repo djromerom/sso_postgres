@@ -73,7 +73,6 @@ class EmailServiceTest {
         }).when(template).process(any(), any(StringWriter.class));
 
         User u = new User();
-        u.setUsername("alice");
         u.setFullName("Alice Example");
         u.setEmail("alice@example.com");
 
@@ -83,7 +82,7 @@ class EmailServiceTest {
         ArgumentCaptor<Map<String, Object>> model = ArgumentCaptor.forClass(Map.class);
         verify(template).process(model.capture(), any(StringWriter.class));
         Map<String, Object> map = model.getValue();
-        assertThat(map).containsEntry("userName", "alice");
+        assertThat(map).containsEntry("userName", "alice@example.com");
         assertThat(map).containsEntry("name", "Alice Example");
         assertThat(map).containsEntry("token", "tok-abc");
         assertThat(map).containsEntry("domain", props.activationUrl());
@@ -105,7 +104,6 @@ class EmailServiceTest {
         }).when(template).process(any(), any(StringWriter.class));
 
         User u = new User();
-        u.setUsername("alice");
         u.setFullName("Alice");
         u.setEmail("alice@example.com");
 
@@ -132,7 +130,6 @@ class EmailServiceTest {
         }).when(template).process(any(), any(StringWriter.class));
 
         User u = new User();
-        u.setUsername("alice");
         // fullName intentionally null
         u.setEmail("alice@example.com");
 
@@ -141,8 +138,10 @@ class EmailServiceTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> model = ArgumentCaptor.forClass(Map.class);
         verify(template).process(model.capture(), any(StringWriter.class));
-        // "name" should fall back to username.
-        assertThat(model.getValue()).containsEntry("name", "alice");
+        // "name" should fall back to the email since
+        // fullName is null (post-V12 the fallback is the
+        // email — the legacy username column is gone).
+        assertThat(model.getValue()).containsEntry("name", "alice@example.com");
     }
 
     @Test
@@ -157,7 +156,6 @@ class EmailServiceTest {
         // be UnnecessaryStubbing.
 
         User u = new User();
-        u.setUsername("alice");
         u.setEmail("alice@example.com");
 
         // Must NOT propagate — the calling createAccount would

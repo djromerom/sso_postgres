@@ -41,7 +41,7 @@ public class WriteCatalogService {
     }
 
     @Transactional(readOnly = true)
-    public WriteDefinitionDto resolve(String uuid, String username) {
+    public WriteDefinitionDto resolve(String uuid, String email) {
         WriteDefinition w = writeRepo.findByUuid(uuid)
                 .orElseThrow(() -> new AccessDeniedException(
                         "No tiene acceso al write: " + uuid));
@@ -49,7 +49,7 @@ public class WriteCatalogService {
         // Writes are never publicEnd — there's no PUBLIC_END
         // column on the legacy write table. So we always go
         // through the role intersection check.
-        Set<String> userRoles = userRepo.findByUsername(username)
+        Set<String> userRoles = userRepo.findByEmail(email)
                 .map(u -> u.getRoles().stream()
                         .map(Role::getName)
                         .collect(Collectors.toSet()))

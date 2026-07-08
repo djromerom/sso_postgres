@@ -40,9 +40,14 @@ export function UsersListPage() {
   }
 
   const columns: Column<UserResponse>[] = [
-    { key: "username", header: "Usuario", render: (u) => u.username },
-    { key: "fullName", header: "Nombre", render: (u) => u.fullName },
+    // Post-V12 the table renders `email` where `Usuario` used
+    // to go — email IS the login identifier now and the
+    // `UserResponse` record no longer carries a separate
+    // `username` slot. The render falls back to `fullName` when
+    // the email is empty so freshly-seeded rows that haven't
+    // hydrated a name yet still show a readable handle.
     { key: "email", header: "Email", render: (u) => u.email },
+    { key: "fullName", header: "Nombre", render: (u) => u.fullName },
     {
       key: "active",
       header: "Estado",

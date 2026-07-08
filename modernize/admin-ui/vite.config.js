@@ -18,12 +18,12 @@ import path from "node:path";
 export default defineConfig({
     // The api-gateway serves this SPA under /admin/** (see
     // AdminUiGlobalFilter). Without this base, Vite emits asset
-    // URLs at the site root (/assets/...) which the gateway does
-    // not serve and its deny-by-default security 401s — the page
-    // renders blank. base: "/admin/" makes the built index.html
-    // reference /admin/assets/... which the gateway serves and
-    // permits. The router already hardcodes the /admin prefix in
-    // its route paths, so no React Router basename is needed.
+    // URLs at the site root (/assets/...) which the gateway does not
+    // serve and its deny-by-default security 401s — the page renders
+    // blank. base: "/admin/" makes the built index.html reference
+    // /admin/assets/... which the gateway serves and permits. The
+    // router already hardcodes the /admin prefix in its route paths,
+    // so no React Router basename is needed.
     base: "/admin/",
     plugins: [react()],
     resolve: {

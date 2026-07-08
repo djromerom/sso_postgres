@@ -107,7 +107,7 @@ public class RefreshController {
         }
         if (outcome instanceof RefreshTokenStore.RefreshOutcome.ReuseDetected reuse) {
             log.warn("Refresh-token reuse detected; family wiped — user={} family={} ip={}",
-                    reuse.username(), reuse.familyId(), clientIp(request));
+                    reuse.email(), reuse.familyId(), clientIp(request));
             // Clear the cookie so the browser stops presenting the
             // stolen value.
             response.addHeader(HttpHeaders.SET_COOKIE, buildClearCookie(request));
@@ -120,10 +120,10 @@ public class RefreshController {
         RefreshTokenStore.RefreshTokenHandle next = rotated.next();
 
         // We need the user's roles to mint the access token. The
-        // store only carries username + userId; the role list is
+        // store only carries email + userId; the role list is
         // loaded from the DB. This is one indexed lookup per
         // refresh — acceptable cost for keeping the store contract
-        // minimal. The username is recovered by peeking the freshly-
+        // minimal. The email is recovered by peeking the freshly-
         // minted record (rotate's MULTI block already wrote the new
         // hash + family-membership before returning).
         RefreshTokenStore.RefreshTokenLookup lookup = refreshTokenStore.peek(next.rawToken());
@@ -140,10 +140,10 @@ public class RefreshController {
                     .body(Map.of("error", "user_not_found"));
         }
 
-        User user = userRepository.findByUsername(lookup.username()).orElse(null);
+        User user = userRepository.findByEmail(lookup.email()).orElse(null);
         if (user == null) {
             log.error("Refresh rotated but user {} no longer exists; revoking rotated token",
-                    lookup.username());
+                    lookup.email());
             try {
                 refreshTokenStore.revokeToken(next.rawToken());
             } catch (RuntimeException ignored) {
@@ -153,8 +153,8 @@ public class RefreshController {
                     .body(Map.of("error", "user_not_found"));
         }
 
-        Set<String> roles = effectiveRoles.forUsername(user.getUsername());
-        String accessToken = jwt.issueAccessToken(user.getUsername(), roles);
+        Set<String> roles = effectiveRoles.forEmail(user.getEmail());
+        String accessToken = jwt.issueAccessToken(user.getEmail(), roles);
 
         response.addHeader(HttpHeaders.SET_COOKIE,
                 JsonLoginFilter.buildRefreshCookie(next.rawToken(), next.ttlSeconds(), request));

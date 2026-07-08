@@ -54,7 +54,7 @@
 set -euo pipefail
 
 GATEWAY="${GATEWAY:-http://localhost:8080}"
-ADMIN_USER="${SSO_ADMIN_USERNAME:-admin}"
+ADMIN_EMAIL="${SSO_ADMIN_EMAIL:-admin@example.com}"
 ADMIN_PASSWORD="${SSO_ADMIN_PASSWORD:-ChangeMe-Now-Please-123!}"
 
 PASS=0
@@ -91,7 +91,7 @@ LOGIN_HTTP=$(curl -sS -o /tmp/login-body.$$ -D /tmp/login-hdr.$$ \
   -w '%{http_code}' -X POST "$GATEWAY/login" \
   -H "Content-Type: application/json" \
   -c "$JAR" \
-  -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASSWORD\"}")
+  -d "{\"username\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
 
 if [ "$LOGIN_HTTP" = "200" ]; then
   ok "Login returns 200"
@@ -194,7 +194,7 @@ JAR2=$(mktemp)
 curl -sS -o /dev/null -D /tmp/login2-hdr.$$ -X POST "$GATEWAY/login" \
   -H "Content-Type: application/json" \
   -c "$JAR2" \
-  -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASSWORD\"}"
+  -d "{\"username\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}"
 trap 'rm -f "$JAR" "$JAR2" "$V1_JAR" "$V2_JAR" "$PRE_JAR" "$EMPTY_JAR" "$A_JAR" "$B_JAR" "$DEV_A" "$DEV_B" /tmp/smoke-refresh-body.$$ /tmp/smoke-refresh-hdr.$$ /tmp/login-body.$$ /tmp/login-hdr.$$ /tmp/login2-hdr.$$ /tmp/reuse-body.$$ /tmp/v2-body.$$ /tmp/empty-body.$$ /tmp/anon-users-body.$$ /tmp/logout-hdr.$$ /tmp/gettoken-anon-body.$$ /tmp/gettoken-auth-body.$$' EXIT
 
 LOGOUT_HTTP=$(curl -sS -o /dev/null -D /tmp/logout-hdr.$$ -w '%{http_code}' \
@@ -232,9 +232,9 @@ echo ">>> 5. Two simultaneous logins -> independent families"
 
 DEV_A=$(mktemp); DEV_B=$(mktemp)
 curl -sS -o /dev/null -X POST "$GATEWAY/login" -H "Content-Type: application/json" \
-  -c "$DEV_A" -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASSWORD\"}"
+  -c "$DEV_A" -d "{\"username\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}"
 curl -sS -o /dev/null -X POST "$GATEWAY/login" -H "Content-Type: application/json" \
-  -c "$DEV_B" -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASSWORD\"}"
+  -c "$DEV_B" -d "{\"username\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}"
 
 COOKIE_A=$(grep 'sso_refresh' "$DEV_A" | awk '{print $7}')
 COOKIE_B=$(grep 'sso_refresh' "$DEV_B" | awk '{print $7}')
@@ -276,10 +276,10 @@ PAD=$(( (4 - ${#PAYLOAD} % 4) % 4 ))
 for _ in $(seq 1 $PAD); do PAYLOAD="${PAYLOAD}="; done
 SUB=$(echo "$PAYLOAD" | tr '_-' '/+' | base64 -d 2>/dev/null \
       | python3 -c "import sys,json; print(json.load(sys.stdin)['sub'])" 2>/dev/null || echo "")
-if [ "$SUB" = "$ADMIN_USER" ]; then
+if [ "$SUB" = "$ADMIN_EMAIL" ]; then
   ok "JWT sub claim is '$SUB'"
 else
-  bad "JWT sub claim expected '$ADMIN_USER', got '${SUB:-<empty>}'"
+  bad "JWT sub claim expected '$ADMIN_EMAIL', got '${SUB:-<empty>}'"
 fi
 
 # ---------- 7. cookie security attribute roll-up ----------

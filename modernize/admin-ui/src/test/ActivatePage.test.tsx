@@ -105,7 +105,7 @@ describe("ActivatePage", () => {
     );
 
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
-    const [url, init] = fetchSpy.mock.calls[0];
+    const [url, init] = fetchSpy.mock.calls[0]!;
     expect(url).toBe("/api/sso-admin/activateAccount");
     expect(init).toEqual(
       expect.objectContaining({

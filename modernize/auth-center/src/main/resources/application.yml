@@ -114,9 +114,15 @@ sso:
     # SSO_BOOTSTRAP_ENABLED=false and provision users via an admin
     # endpoint or migration.
     enabled: ${SSO_BOOTSTRAP_ENABLED:true}
-    admin-username: ${SSO_ADMIN_USERNAME:admin}
+    # Post-V12 the seed key is the email (the legacy
+    # `admin-username` slot is gone since the column it pointed
+    # at was dropped from the schema). SSO_ADMIN_USERNAME is
+    # kept as a fallback alias so an existing .env file silently
+    # migrates — the resolver tries `SSO_ADMIN_EMAIL` first, then
+    # `SSO_ADMIN_USERNAME` (which we treat as a deprecated
+    # human-readable identifier). See DataInitializer.
+    admin-email: ${SSO_ADMIN_EMAIL:${SSO_ADMIN_USERNAME:admin@example.com}}
     admin-password: ${SSO_ADMIN_PASSWORD:ChangeMe-Now-Please-123!}
-    admin-email: ${SSO_ADMIN_EMAIL:admin@example.com}
   refresh-token:
     # Lifetime of every refresh token minted by the store. Mirrored
     # to the sso_refresh cookie's Max-Age via RefreshTokenStore.ttlSeconds()

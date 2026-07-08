@@ -71,8 +71,15 @@ public class EmailService {
 
     private Map<String, Object> baseVars(User user) {
         Map<String, Object> vars = new HashMap<>();
-        vars.put("userName", user.getUsername());
-        vars.put("name", user.getFullName() == null ? user.getUsername() : user.getFullName());
+        // The {@code userName} var used to be {@code user.getUsername()}.
+        // That column is gone since V12 — email IS the login identifier
+        // now, so we expose it as the visible "user" reference for the
+        // email template (the legacy template label rendered it as
+        // "Tu nombre de usuario:"). Templates that want the full name
+        // use {@code name}.
+        vars.put("userName", user.getEmail());
+        vars.put("email", user.getEmail());
+        vars.put("name", user.getFullName() == null ? user.getEmail() : user.getFullName());
         vars.put("logo", props.logoUrl());
         vars.put("company", props.company());
         vars.put("appName", props.appName());

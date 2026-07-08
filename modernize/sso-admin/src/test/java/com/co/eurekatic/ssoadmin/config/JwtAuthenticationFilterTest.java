@@ -91,7 +91,7 @@ class JwtAuthenticationFilterTest {
         assertThat(auth).isNotNull();
         // The principal is the AuthPrincipal record itself.
         assertThat(auth.getPrincipal()).isInstanceOf(AuthPrincipal.class);
-        assertThat(((AuthPrincipal) auth.getPrincipal()).username()).isEqualTo("alice");
+        assertThat(((AuthPrincipal) auth.getPrincipal()).email()).isEqualTo("alice");
         assertThat(auth.getAuthorities())
                 .extracting(Object::toString)
                 .contains("ROLE_ADMIN");

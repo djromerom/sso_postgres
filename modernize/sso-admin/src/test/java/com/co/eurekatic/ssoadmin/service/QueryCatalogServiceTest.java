@@ -66,7 +66,7 @@ class QueryCatalogServiceTest {
     @Test
     void resolveReturnsDefinitionForKnownQueryWithMatchingRole() {
         when(queryRepo.findByUuid("uuid-1")).thenReturn(Optional.of(q1));
-        when(userRepo.findByUsername(USER1)).thenReturn(Optional.of(userWith(ROLE_REPORTS)));
+        when(userRepo.findByEmail(USER1)).thenReturn(Optional.of(userWith(ROLE_REPORTS)));
 
         QueryDefinition def = service.resolve("uuid-1", USER1);
 
@@ -82,13 +82,13 @@ class QueryCatalogServiceTest {
 
         assertThatThrownBy(() -> service.resolve("nope", USER1))
                 .isInstanceOf(AccessDeniedException.class);
-        verify(userRepo, never()).findByUsername(USER1);
+        verify(userRepo, never()).findByEmail(USER1);
     }
 
     @Test
     void resolveReturns403WhenUserHasNoMatchingRole() {
         when(queryRepo.findByUuid("uuid-1")).thenReturn(Optional.of(q1));
-        when(userRepo.findByUsername(USER2)).thenReturn(Optional.of(userWith(ROLE_ANALYTICS)));
+        when(userRepo.findByEmail(USER2)).thenReturn(Optional.of(userWith(ROLE_ANALYTICS)));
 
         assertThatThrownBy(() -> service.resolve("uuid-1", USER2))
                 .isInstanceOf(AccessDeniedException.class);
@@ -99,7 +99,7 @@ class QueryCatalogServiceTest {
         when(queryRepo.findByUuid("uuid-pub")).thenReturn(Optional.of(qPublic));
         // hasAdminRole runs first — return a user with NO ADMIN
         // role so the publicEnd short-circuit is the actual gate.
-        when(userRepo.findByUsername(USER2))
+        when(userRepo.findByEmail(USER2))
                 .thenReturn(Optional.of(userWith(ROLE_ANALYTICS)));
         QueryDefinition def = service.resolve("uuid-pub", USER2);
 
@@ -107,13 +107,13 @@ class QueryCatalogServiceTest {
         // The per-row role check (userHasAccessTo) is NOT
         // consulted because publicEnd short-circuits first.
         // hasAdminRole IS consulted — it runs unconditionally.
-        verify(userRepo).findByUsername(USER2);
+        verify(userRepo).findByEmail(USER2);
     }
 
     @Test
     void resolveAllowsAdminWithoutRoleCheck() {
         when(queryRepo.findByUuid("uuid-1")).thenReturn(Optional.of(q1));
-        when(userRepo.findByUsername(ADMIN)).thenReturn(Optional.of(userWith("ADMIN")));
+        when(userRepo.findByEmail(ADMIN)).thenReturn(Optional.of(userWith("ADMIN")));
 
         QueryDefinition def = service.resolve("uuid-1", ADMIN);
 
@@ -124,7 +124,7 @@ class QueryCatalogServiceTest {
 
     @Test
     void listForCallerAdminSeesEverything() {
-        when(userRepo.findByUsername(ADMIN)).thenReturn(Optional.of(userWith("ADMIN")));
+        when(userRepo.findByEmail(ADMIN)).thenReturn(Optional.of(userWith("ADMIN")));
         when(queryRepo.findAllByOrderByIdAsc()).thenReturn(List.of(q1, q2, qPublic));
 
         List<QueryDefinition> result = service.listForCaller(ADMIN, null);
@@ -135,7 +135,7 @@ class QueryCatalogServiceTest {
 
     @Test
     void listForCallerUserWithOneMatchingRoleSeesOnlyMatching() {
-        when(userRepo.findByUsername(USER1)).thenReturn(Optional.of(userWith(ROLE_REPORTS)));
+        when(userRepo.findByEmail(USER1)).thenReturn(Optional.of(userWith(ROLE_REPORTS)));
         when(queryRepo.findAllByOrderByIdAsc()).thenReturn(List.of(q1, q2, qPublic));
 
         List<QueryDefinition> result = service.listForCaller(USER1, null);
@@ -148,7 +148,7 @@ class QueryCatalogServiceTest {
 
     @Test
     void listForCallerUserWithNoRolesSeesOnlyPublic() {
-        when(userRepo.findByUsername(USER2)).thenReturn(Optional.of(userWith(ROLE_ANALYTICS)));
+        when(userRepo.findByEmail(USER2)).thenReturn(Optional.of(userWith(ROLE_ANALYTICS)));
         when(queryRepo.findAllByOrderByIdAsc()).thenReturn(List.of(q1, q2, qPublic));
 
         // USER2 only has ANALYTICS, so q2 matches + qPublic via
@@ -165,7 +165,7 @@ class QueryCatalogServiceTest {
         // (the field is mutated through addRole/removeRole), so
         // we construct it and leave roles empty by default.
         User empty = new User("nobody", "x");
-        when(userRepo.findByUsername("nobody")).thenReturn(Optional.of(empty));
+        when(userRepo.findByEmail("nobody")).thenReturn(Optional.of(empty));
         when(queryRepo.findAllByOrderByIdAsc()).thenReturn(List.of(q1, q2, qPublic));
 
         List<QueryDefinition> result = service.listForCaller("nobody", null);
@@ -176,7 +176,7 @@ class QueryCatalogServiceTest {
 
     @Test
     void listForCallerReturnsEmptyWhenNoMatch() {
-        when(userRepo.findByUsername(USER1)).thenReturn(Optional.of(userWith(ROLE_REPORTS)));
+        when(userRepo.findByEmail(USER1)).thenReturn(Optional.of(userWith(ROLE_REPORTS)));
         // q1 requires REPORTS → USER1 sees q1; qPublic also
         // visible. If we narrow to a microservice that has no
         // queries, we get [].
@@ -190,7 +190,7 @@ class QueryCatalogServiceTest {
 
     @Test
     void listForCallerUsesMicroserviceFilterWhenProvided() {
-        when(userRepo.findByUsername(ADMIN)).thenReturn(Optional.of(userWith("ADMIN")));
+        when(userRepo.findByEmail(ADMIN)).thenReturn(Optional.of(userWith("ADMIN")));
         when(queryRepo.findAllByMicroservice_IdOrderByIdAsc(7L))
                 .thenReturn(List.of(q1));
 
@@ -202,7 +202,7 @@ class QueryCatalogServiceTest {
 
     @Test
     void listForCallerFallsBackToAllWhenMicroserviceIdNull() {
-        when(userRepo.findByUsername(ADMIN)).thenReturn(Optional.of(userWith("ADMIN")));
+        when(userRepo.findByEmail(ADMIN)).thenReturn(Optional.of(userWith("ADMIN")));
         when(queryRepo.findAllByOrderByIdAsc()).thenReturn(List.of(q1, q2));
 
         service.listForCaller(ADMIN, null);
@@ -215,7 +215,7 @@ class QueryCatalogServiceTest {
         // Deleted user / LDAP deprovisioning race: we must NOT
         // grant them admin. The per-row filter still runs and
         // they see nothing (no bypass).
-        when(userRepo.findByUsername("ghost")).thenReturn(Optional.empty());
+        when(userRepo.findByEmail("ghost")).thenReturn(Optional.empty());
         when(queryRepo.findAllByOrderByIdAsc()).thenReturn(List.of(q1, q2, qPublic));
 
         List<QueryDefinition> result = service.listForCaller("ghost", null);

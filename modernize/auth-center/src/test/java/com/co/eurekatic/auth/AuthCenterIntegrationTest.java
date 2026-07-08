@@ -175,7 +175,6 @@ class AuthCenterIntegrationTest {
         roleRepository.save(adminRole);
 
         User alice = new User();
-        alice.setUsername("alice");
         alice.setEmail("alice@example.com");
         alice.setFullName("Alice Example");
         alice.setPassword(passwordEncoder.encode("s3cret"));
@@ -192,7 +191,6 @@ class AuthCenterIntegrationTest {
         // be authenticated but rejected with 403 — not allowed to
         // see the full user list.
         User bob = new User();
-        bob.setUsername("bob");
         bob.setEmail("bob@example.com");
         bob.setFullName("Bob Example");
         bob.setPassword(passwordEncoder.encode("s3cret"));
@@ -230,7 +228,7 @@ class AuthCenterIntegrationTest {
 
     @Test
     void getInfoUserAcceptsIssuedToken() throws Exception {
-        String token = loginAndGetToken("alice", "s3cret");
+        String token = loginAndGetToken("alice@example.com", "s3cret");
 
         byte[] bodyBytes = webTestClient.get().uri("/getInfoUser")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
@@ -240,8 +238,10 @@ class AuthCenterIntegrationTest {
                 .getResponseBodyContent();
 
         JsonNode body = mapper.readTree(bodyBytes);
-        assertThat(body.get("username").asText()).isEqualTo("alice");
+        // UserSummary no longer carries the `username` slot since
+        // the V12 migration (email IS the unique login identifier).
         assertThat(body.get("email").asText()).isEqualTo("alice@example.com");
+        assertThat(body.get("fullName").asText()).isEqualTo("Alice Example");
     }
 
     @Test
@@ -273,7 +273,7 @@ class AuthCenterIntegrationTest {
         // populates SecurityContext with his `["USER"]` authority)
         // but AccessDecisionManager denies access — the configured
         // accessDeniedHandler responds with 403.
-        String bobToken = loginAndGetToken("bob", "s3cret");
+        String bobToken = loginAndGetToken("bob@example.com", "s3cret");
         webTestClient.get().uri("/getUsersSSO")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + bobToken)
                 .exchange()
@@ -283,7 +283,7 @@ class AuthCenterIntegrationTest {
     @Test
     void getUsersSsoWithAdminTokenReturns200() throws Exception {
         // Alice has both USER and ADMIN. ADMIN is enough.
-        String aliceToken = loginAndGetToken("alice", "s3cret");
+        String aliceToken = loginAndGetToken("alice@example.com", "s3cret");
         byte[] bodyBytes = webTestClient.get().uri("/getUsersSSO")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + aliceToken)
                 .exchange()
@@ -301,11 +301,11 @@ class AuthCenterIntegrationTest {
         // 401/403/200 ladder is what the test pins down.
         assertThat(body.size()).isGreaterThanOrEqualTo(2);
 
-        java.util.Set<String> usernames = new java.util.HashSet<>();
+        java.util.Set<String> emails = new java.util.HashSet<>();
         for (JsonNode u : body) {
-            usernames.add(u.get("username").asText());
+            emails.add(u.get("email").asText());
         }
-        assertThat(usernames).contains("alice", "bob");
+        assertThat(emails).contains("alice@example.com", "bob@example.com");
     }
 
     /* ====================== /getToken absent surface ====================== */
@@ -342,7 +342,7 @@ class AuthCenterIntegrationTest {
         // shape end-to-end: an attacker with a stolen access
         // token cannot trigger any code path through /getToken
         // — there is no code path to trigger.
-        String aliceToken = loginAndGetToken("alice", "s3cret");
+        String aliceToken = loginAndGetToken("alice@example.com", "s3cret");
         webTestClient.get().uri(uriBuilder -> uriBuilder
                         .path("/getToken")
                         .queryParam("refreshToken", "ANY_GARBAGE")
@@ -559,7 +559,7 @@ class AuthCenterIntegrationTest {
      * /getUsersSSO tests. The "first in the DB" assertion still
      * holds because alice is the alphabetically-later user so bob
      * would be the natural "first" pick for any buggy
-     * findByUsername(...).findFirst() shortcut.
+     * findByEmail(...).findFirst() shortcut.
      */
     @Test
     void refreshReturnsTokenForCorrectUser() throws Exception {
@@ -612,11 +612,11 @@ class AuthCenterIntegrationTest {
         return setCookie.substring(eq + 1, semi);
     }
 
-    private String loginAndGetToken(String username, String password) throws Exception {
+    private String loginAndGetToken(String email, String password) throws Exception {
         byte[] bodyBytes = webTestClient.post().uri("/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(mapper.writeValueAsString(
-                        Map.of("username", username, "password", password)))
+                        Map.of("email", email, "password", password)))
                 .exchange()
                 .expectStatus().isEqualTo(HttpStatus.OK)
                 .returnResult(Void.class)

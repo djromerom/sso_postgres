@@ -10,6 +10,12 @@ import { LoginPage } from "@/auth/LoginPage";
  * AuthProvider will fire a silent /api/auth/refresh on mount; we
  * stub fetch to return 401 for that, so the user lands in
  * "unauthenticated" and the form is interactive.
+ *
+ * <p>Post-V12 the login identifier is the user's email (the
+ * legacy {@code username} column is gone), so the form labels
+ * reflect that — the password manager hint is
+ * {@code autoComplete="email"} and the visible label says
+ * "Email".
  */
 function renderLogin(initialEntry = "/login") {
   let result!: ReturnType<typeof render>;
@@ -38,10 +44,10 @@ describe("LoginPage", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders username, password and a submit button", async () => {
+  it("renders email, password and a submit button", async () => {
     fetchSpy.mockResolvedValueOnce(new Response("nope", { status: 401 })); // boot refresh
     renderLogin();
-    expect(screen.getByLabelText(/Usuario/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Email/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Contraseña/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Entrar/i })).toBeInTheDocument();
   });
@@ -61,7 +67,7 @@ describe("LoginPage", () => {
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
 
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText(/Usuario/i), "admin");
+    await user.type(screen.getByLabelText(/Email/i), "admin@example.com");
     await user.type(screen.getByLabelText(/Contraseña/i), "ChangeMe-Now-123");
     await user.click(screen.getByRole("button", { name: /Entrar/i }));
 
@@ -75,7 +81,7 @@ describe("LoginPage", () => {
   it("shows an error message on bad credentials", async () => {
     fetchSpy.mockResolvedValueOnce(new Response("nope", { status: 401 })); // boot
     fetchSpy.mockResolvedValueOnce(
-      new Response(JSON.stringify({ code: "BAD_CREDENTIALS", message: "Usuario o contraseña inválidos", timestamp: "" }), {
+      new Response(JSON.stringify({ code: "BAD_CREDENTIALS", message: "Email o contraseña inválidos", timestamp: "" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       }),
@@ -85,12 +91,12 @@ describe("LoginPage", () => {
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
 
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText(/Usuario/i), "admin");
+    await user.type(screen.getByLabelText(/Email/i), "admin@example.com");
     await user.type(screen.getByLabelText(/Contraseña/i), "wrong");
     await user.click(screen.getByRole("button", { name: /Entrar/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      /Usuario o contraseña inválidos/i,
+      /Email o contraseña inválidos/i,
     );
   });
 });
