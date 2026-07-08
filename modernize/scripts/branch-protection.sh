@@ -1,20 +1,25 @@
 #!/usr/bin/env bash
 # =============================================================================
 # branch-protection.sh — Aplica (o reaplica) la branch protection sobre `main`
-# en djromerom/sso_postgres, dejando el repositorio con las reglas descritas
-# en CONTRIBUTING.md §3.3.
+# Y `test` en djromerom/sso_postgres, dejando el repositorio con las reglas
+# descritas en CONTRIBUTING.md §1 y §3.3.
 #
 # Lo dispara el **maintainer** manualmente, no un PR. Por seguridad este
-# script se queda commiteado y se ejecuta desde la rama `main` ya mergeada:
+# script se queda commiteado y se ejecuta después de mergear la PR de
+# infraestructura que trae el workflow `ci.yml`:
 #
-#   1. Fusionar la PR de infraestructura que trae el workflow `ci.yml`.
-#   2. Ejecutar este script:
+#   1. Fusionar la PR de infraestructura que trae el workflow `ci.yml`
+#      (PR #4 en este repo).
+#   2. Asegurarse de que ambas ramas (`main` y `test`) existen en el
+#      remote. Si `test` no existe, crearla:
+#        git branch test origin/main && git push -u origin test
+#   3. Ejecutar este script:
 #
 #        gh auth login --scopes repo,workflow   # una sola vez
 #        ./scripts/branch-protection.sh
 #
-#   3. La próxima PR contra `main` ya estará sujeta a los checks listados
-#      en `required_status_checks.contexts`.
+#   4. La próxima PR contra `main` o `test` ya estará sujeta a los checks
+#      listados en `required_status_checks.contexts`.
 #
 # Idempotente: `gh api -X PATCH` reemplaza la configuración existente. Se
 # puede correr de nuevo para actualizar la lista de checks cuando entren
@@ -25,10 +30,10 @@
 set -euo pipefail
 
 REPO="djromerom/sso_postgres"
-BRANCH="main"
 
-# El payload exacto. Cualquier cambio a la política se hace modificando
-# este archivo, NO editando flags de la CLI.
+# El mismo payload se aplica a main y a test (mismas reglas: misma
+# rigurosidad en integración que en release; la única diferencia entre
+# ambas vive en la regla de origen de PRs, NO en la protección).
 PAYLOAD=$(cat <<'JSON'
 {
   "required_status_checks": {
@@ -64,28 +69,39 @@ PAYLOAD=$(cat <<'JSON'
 JSON
 )
 
-echo "→ Aplicando branch protection a ${REPO}:${BRANCH}..."
-echo
-echo "${PAYLOAD}" | gh api \
-  -X PATCH \
-  -H "Accept: application/vnd.github+json" \
-  -H "X-GitHub-Api-Version: 2022-11-28" \
-  "/repos/${REPO}/branches/${BRANCH}/protection" \
-  --input -
+# Aplica el payload a una rama; imprime resumen si la operación fue
+# exitosa. No aborta el run si una rama falla (idempotencia: ya
+# protegida o no existente).
+apply_protection() {
+  local branch="$1"
+  echo
+  echo "──── ${REPO}:${branch} ────"
+  echo "→ Aplicando protection..."
+  if ! printf '%s' "${PAYLOAD}" | gh api \
+      -X PATCH \
+      -H "Accept: application/vnd.github+json" \
+      -H "X-GitHub-Api-Version: 2022-11-28" \
+      "/repos/${REPO}/branches/${branch}/protection" \
+      --input - >/dev/null; then
+    echo "⚠ Falló la protección de '${branch}' (probablemente la rama no existe en el remote todavía). Saltando."
+    return 1
+  fi
+  echo "→ Verificando la configuración aplicada..."
+  gh api "/repos/${REPO}/branches/${branch}/protection" \
+    | jq '{
+      required_status_checks: (.required_status_checks.contexts),
+      required_approving_review_count: .required_pull_request_reviews.required_approving_review_count,
+      dismiss_stale_reviews: .required_pull_request_reviews.dismiss_stale_reviews,
+      required_linear_history: .required_linear_history,
+      allow_force_pushes: .allow_force_pushes,
+      allow_deletions: .allow_deletions,
+      enforce_admins: .enforce_admins,
+      required_conversation_resolution: .required_conversation_resolution
+    }'
+}
+
+apply_protection "main"
+apply_protection "test"
 
 echo
-echo "→ Verificando la configuración aplicada..."
-gh api "/repos/${REPO}/branches/${BRANCH}/protection" \
-  | jq '{
-    required_status_checks: (.required_status_checks.contexts),
-    required_approving_review_count: .required_pull_request_reviews.required_approving_review_count,
-    dismiss_stale_reviews: .required_pull_request_reviews.dismiss_stale_reviews,
-    required_linear_history: .required_linear_history,
-    allow_force_pushes: .allow_force_pushes,
-    allow_deletions: .allow_deletions,
-    enforce_admins: .enforce_admins,
-    required_conversation_resolution: .required_conversation_resolution
-  }'
-
-echo
-echo "✓ Listo. Próxima PR contra '${BRANCH}' requiere los checks listados y 1 review."
+echo "✓ Listo. Próximas PRs contra 'main' o 'test' requieren los checks listados y 1 review."

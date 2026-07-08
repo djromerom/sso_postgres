@@ -1,5 +1,5 @@
 # =============================================================================
-# ci.yml — PR + push a main: matriz por módulo + admin-ui.
+# ci.yml — PR + push a main o test: matriz por módulo + admin-ui.
 #
 # Estructura de la matriz:
 #   - common                       → mvn verify (compilación + unit tests)
@@ -9,6 +9,10 @@
 #   - api-gateway                  → idem (incluye Testcontainers también)
 #   - admin-ui-{typecheck,test,lint,build}
 #                                  → typecheck / vitest / eslint / vite build
+#
+# Dispara en:
+#   - PR contra main o test
+#   - push directo a main o test (concurrency cancela runs obsoletos)
 #
 # Notas:
 #   - JDK 25 / Temurin (el repo está sobre Spring Boot 4 + JDK 25).
@@ -21,7 +25,8 @@
 #     (no es submódulo, vive dentro de `modernize/`).
 #
 # Para activar branch protection, ir a Settings → Branches → Add rule
-# sobre `main` con required checks: `maven-common`, `maven-auth-center`,
+# sobre `main` y `test` (script: `scripts/branch-protection.sh`) con
+# required checks: `maven-common`, `maven-auth-center`,
 # `maven-sso-admin`, `maven-api-gateway`, `admin-ui-typecheck`,
 # `admin-ui-test`, `admin-ui-lint`, `admin-ui-build`.
 # =============================================================================
@@ -30,9 +35,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, test]
   push:
-    branches: [main]
+    branches: [main, test]
 
 # Permisos mínimos: checks:read para comentar / attach; contents:read
 # para checkout. Los workflows no publican nada al registry en esta fase.

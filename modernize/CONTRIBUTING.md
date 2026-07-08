@@ -6,23 +6,49 @@ reviewer lo apruebe sin rehacer trabajo.
 
 ---
 
-## 1. Modelo de ramas — **GitHub Flow**
+## 1. Modelo de ramas — **GitHub Flow + integration buffer**
 
-Sólo una rama de vida larga: **`main`**. Todo lo demás son feature
+Dos ramas de vida larga: **`main`** (releases limpios) y **`test`**
+(buffer de integración / staging donde se acumulan PRs de varios devs
+y se valida el cross-PR antes de promover). Todo lo demás son feature
 branches de vida corta.
 
 ```
-main          ●────●────●────●────●  (deployable en cada commit)
-                ↑           ↑
-feat/foo       │●───●──●──→●┘
-feat/bar       │●───●───●──→●┘
+main    ●─────●─────●────●─────●  (releases; nunca roto)
+              ↑           ↑
+test    ●───●───●──●───●──●──┤  (staging; integración cross-PR)
+              ↑     ↑
+feat/a   │●───●──→●┘   │       (PR #4: chore/dev → test)
+feat/b   │●───●──●────→●┘      (PR #5: feat/foo → test)
 
-• Ramas nuevas desde main actualizado.
-• PR → 1 aprobación + todos los checks verdes → squash-merge a main.
-• Tag SemVer en main cuando se libere release (ver §5).
-• Hotfix = rama `fix/*` desde el tag de la versión afectada.
-  Se mergea de vuelta a main (no a una rama de release aparte).
+Flujo:
+  1. Dev abre PR de feat/a hacia test (no hacia main).
+  2. Review + CI verde en PR → merge a test (squash).
+  3. Cuando test es estable y se quiere liberar → promoción a main
+     vía PR `--head test --base main` (ver §3.5).
+  4. Tag SemVer en main al promover (§5).
 ```
+
+**Reglas por rama:**
+
+| | `main` | `test` |
+|---|---|---|
+| Branch protection | estricta | estricta |
+| Required approvals | 1 | 1 |
+| Status checks | full matrix | full matrix |
+| Force-push | bloqueado | bloqueado |
+| Deletion | bloqueado | bloqueado |
+| Linear history (squash) | sí | sí |
+| Conversation resolve | requerido | requerido |
+| Origen de PRs | `test` (promoción) | `feat/*`, `fix/*`, `refactor/*`, `chore/*` |
+| Deploy target | release env (cuando se taguea) | staging env (auto en cada merge) |
+
+**Hotfix:** si `main` está roto y la fix es urgente y NO puede esperar
+a que pase por `test`, abrí la rama `fix/<slug>` desde el SHA de main,
+PR directo a `main` con label `hotifx`, y tag nuevo después. Después
+mergéate la misma fix en `test` (cherry-pick o PR inversa) para no
+divergir. Si el hotfix ya está en `test`, promovélo antes de mergear
+directo a main para evitar que `test` quede atrás.
 
 **Convención de nombre de rama:**
 
@@ -103,6 +129,62 @@ Configuradas como branch protection sobre `main`:
 
 Una vez mergeada, `gh pr merge --delete-branch` se encarga. No
 dejes ramas zombies en el remote.
+
+### 3.5 Promover `test` → `main` (release procedural)
+
+Esta subsección es **para quien coordina la liberación**, no para cada
+PR. La promoción es optativa: si no hay release a la vista, no se hace.
+
+1. **Verificación previa.** Asegurate de que `test` está verde en CI y
+   de que el entorno de staging (si existe) pasó el smoke suite.
+2. **Sincronización local.**
+
+   ```bash
+   git fetch origin
+   git checkout main && git pull --ff-only origin main
+   git checkout test && git pull --ff-only origin test
+   ```
+
+3. **Promoción.** La forma más limpia es PR (recomendado). Permite
+   que el cambio sea visible y tenga su propia revisión:
+
+   ```bash
+   gh pr create \
+     --base main \
+     --head test \
+     --title "chore(release): promote test → main" \
+     --body "Promoción de los commits acumulados en \`test\` desde la última promoción. Sin código propio; revisa \`git log origin/main..origin/test --oneline\` antes de aprobar."
+   ```
+
+   La PR tiene que pasar los checks de main (mismos 8) y 1 review. Su
+   commit de merge es la **liberación**; taguealo con SemVer al
+   mergear (§5).
+
+   **Atajo sólo para emergencias** (ej. hotfix ya mergeado en main
+   pero el release no se tageó hace tiempo) — fast-forward directo:
+
+   ```bash
+   git checkout main
+   git merge --ff-only origin/test
+   git push origin main   # falla si protection lo bloquea
+   ```
+
+4. **Tag + release.** Inmediatamente después del merge, ver §5.
+
+5. **Devolver a `test` los commits de hotfix.** Si durante la
+   semana mergeaste a `main` cosas que NO están en `test` (hotfixes
+   urgentes), al promover test→main te quedás con esa divergencia.
+   Traelas con cherry-pick:
+
+   ```bash
+   git checkout test
+   git cherry-pick <sha-en-main-que-no-esta-en-test>
+   git push origin test
+   ```
+
+   El CI de `test` re-corre los 8 checks. Una divergencia > 5 commits
+   es señal de que el flujo `test → main` se está cumpliendo a
+   medias.
 
 ---
 
