@@ -35,14 +35,18 @@ REPO="djromerom/sso_postgres"
 # rigurosidad en integración que en release; la única diferencia entre
 # ambas vive en la regla de origen de PRs, NO en la protección).
 #
-# Nota sobre fields excluidos vs la GitHub API docs:
-# - "restrictions": ausente del todo. En repos personales (no-org)
-#   GitHub rechaza "restrictions": null con 422 ("Only organization
-#   repositories can have users and team restrictions"). Si más
-#   adelante el repo migra a una org, agregar de vuelta el field
-#   con un objeto que apunte al team concreto.
-# - "dismissal_restrictions": idem — sin restrictions no aplica
-#   despido.
+# Nota sobre "restrictions" en repos personales (no-org):
+# - La API exige que el field esté presente. Para un repo personal
+#   (no-org) lo correcto es `"restrictions": null` ("no aplica
+#   restricciones de usuarios/teams"). Un objeto vacío `{}` se
+#   rechaza con 422 ("teams, users weren't supplied") y un objeto
+#   con arrays vacíos es ambiguo según la versión de la API.
+# - "dismissal_restrictions" se omite por completo: solo tiene
+#   sentido si `restrictions` apunta a usuarios/teams concretos.
+#   Si el repo migra a una organización y se quiere limitar quién
+#   puede pushear, reemplazar `null` por
+#   `{"users": ["..."], "teams": ["..."]}` y volver a añadir
+#   `dismissal_restrictions` con los mismos identifiers.
 PAYLOAD=$(cat <<'JSON'
 {
   "required_status_checks": {
@@ -65,6 +69,7 @@ PAYLOAD=$(cat <<'JSON'
     "required_approving_review_count": 1,
     "require_last_push_approval": false
   },
+  "restrictions": null,
   "required_linear_history": true,
   "allow_force_pushes": false,
   "allow_deletions": false,
