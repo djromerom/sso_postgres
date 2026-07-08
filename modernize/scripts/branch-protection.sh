@@ -21,7 +21,7 @@
 #   4. La próxima PR contra `main` o `test` ya estará sujeta a los checks
 #      listados en `required_status_checks.contexts`.
 #
-# Idempotente: `gh api -X PATCH` reemplaza la configuración existente. Se
+# Idempotente: `gh api -X PUT` reemplaza la configuración existente. Se
 # puede correr de nuevo para actualizar la lista de checks cuando entren
 # checks nuevos (p.ej. cuando se añada `admin-ui-e2e`).
 #
@@ -34,6 +34,15 @@ REPO="djromerom/sso_postgres"
 # El mismo payload se aplica a main y a test (mismas reglas: misma
 # rigurosidad en integración que en release; la única diferencia entre
 # ambas vive en la regla de origen de PRs, NO en la protección).
+#
+# Nota sobre fields excluidos vs la GitHub API docs:
+# - "restrictions": ausente del todo. En repos personales (no-org)
+#   GitHub rechaza "restrictions": null con 422 ("Only organization
+#   repositories can have users and team restrictions"). Si más
+#   adelante el repo migra a una org, agregar de vuelta el field
+#   con un objeto que apunte al team concreto.
+# - "dismissal_restrictions": idem — sin restrictions no aplica
+#   despido.
 PAYLOAD=$(cat <<'JSON'
 {
   "required_status_checks": {
@@ -51,13 +60,11 @@ PAYLOAD=$(cat <<'JSON'
   },
   "enforce_admins": true,
   "required_pull_request_reviews": {
-    "dismissal_restrictions": {},
     "dismiss_stale_reviews": true,
     "require_code_owner_reviews": false,
     "required_approving_review_count": 1,
     "require_last_push_approval": false
   },
-  "restrictions": null,
   "required_linear_history": true,
   "allow_force_pushes": false,
   "allow_deletions": false,
@@ -78,7 +85,7 @@ apply_protection() {
   echo "──── ${REPO}:${branch} ────"
   echo "→ Aplicando protection..."
   if ! printf '%s' "${PAYLOAD}" | gh api \
-      -X PATCH \
+      -X PUT \
       -H "Accept: application/vnd.github+json" \
       -H "X-GitHub-Api-Version: 2022-11-28" \
       "/repos/${REPO}/branches/${branch}/protection" \
