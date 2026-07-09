@@ -20,21 +20,22 @@ import java.util.stream.Collectors;
  *
  * <p>The endpoint {@code GET /sso-admin/myMenu} consumes this
  * service; the frontend then renders the sidebar from the
- * returned routes. Today the sidebar in {@code admin-ui} is
- * hardcoded — once the FE is wired to this endpoint, the
- * hardcoded list disappears entirely.
+ * returned routes.
  *
- * <p>Two flavors of authorization are honored (mirrors the
- * {@code /myQueries} pattern: broad + fine-grained both win):
- * <ul>
- *   <li><b>Broad</b> — the JWT carries a role bound to an
- *       {@link com.co.eurekatic.common.entity.App App} via
- *       {@code role_app}; the user sees all routes in that app.</li>
- *   <li><b>Fine-grained</b> — the JWT carries a role bound
- *       directly to the route via {@code role_route}; the user
- *       sees that specific route even if it's outside any app
- *       ("orphan" route).</li>
- * </ul>
+ * <p><b>{@code role_route} is the sole grant for menu
+ * visibility</b> — a route shows up for a caller if and only if
+ * one of their roles has a direct {@code role_route} binding to
+ * it (see {@link RouteRepository#findVisibleForRoles}). {@code
+ * role_app} answers a different question entirely — "can this
+ * role use this app at all" (see {@code SsoAdminAppAccessManager})
+ * — and does NOT by itself grant menu visibility; a role with
+ * app-level access still only sees the routes it's explicitly
+ * {@code role_route}-bound to. This used to be a broad-OR-fine
+ * union (any role with {@code role_app} access saw every {@code
+ * app_route}-bound route in that app, regardless of {@code
+ * role_route}), which made the Route edit page's Roles tab a
+ * no-op for such a role — unbinding one specific route did
+ * nothing because the app-level grant still applied. Removed.
  *
  * <p>JWT authorities come back as {@code ROLE_<NAME>} (see
  * {@link com.co.eurekatic.ssoadmin.config.JwtAuthenticationFilter}).
@@ -43,11 +44,13 @@ import java.util.stream.Collectors;
  * {@code auth-center}'s JWT claims.
  *
  * <p>Optional scoping by app name: {@link #forCaller(Authentication, String)}
- * restricts the response to routes whose {@code id_app} points at the
- * resolved {@link App} id. The SPA bakes {@code VITE_APP_NAME}
- * at build time and forwards it via {@code ?app=...}; multi-tenant
- * edits or any "show all my menus" use-case call the un-scoped
- * {@link #forCaller(Authentication)} instead.
+ * intersects the {@code role_route}-granted set with routes that
+ * are members (via {@code app_route}) of the resolved
+ * {@link App} — narrowing, never granting. The SPA bakes
+ * {@code VITE_APP_NAME} at build time and forwards it via
+ * {@code ?app=...}; multi-tenant edits or any "show all my
+ * menus" use-case call the un-scoped {@link #forCaller(Authentication)}
+ * instead.
  */
 @Service
 public class MyMenuService {
@@ -65,11 +68,11 @@ public class MyMenuService {
     }
 
     /**
-     * Returns every route visible to the caller across every
-     * app the caller has access to. Empty list is a legitimate
-     * answer (the user has roles, but none of them grant any
-     * menu access — admin should investigate missing
-     * {@code role_app} / {@code role_route} bindings).
+     * Returns every route visible to the caller. Empty list is a
+     * legitimate answer (the user has roles, but none of them
+     * have a {@code role_route} binding to any route — admin
+     * should investigate missing bindings on the Route edit
+     * page's Roles tab).
      */
     @Transactional(readOnly = true)
     public List<RouteResponse> forCaller(Authentication auth) {

@@ -39,34 +39,23 @@ public interface RouteRepository extends JpaRepository<Route, Long> {
      * given role ids. The {@code /myMenu} endpoint uses this
      * to compute the per-user sidebar in one round-trip.
      *
-     * <p>The query unions two paths:
-     * <ol>
-     *   <li><b>Broad</b> — the route is a member of an
-     *       {@link com.co.eurekatic.common.entity.App App} via
-     *       the {@code app_route} M:N (i.e. {@code App.routes},
-     *       the "checked" list the App edit page's route picker
-     *       controls), and that app is granted to one of the
-     *       user's roles via {@code role_app} (the user sees
-     *       all routes in that app).</li>
-     *   <li><b>Fine-grained</b> — the route has a direct
-     *       {@code ROLE_ROUTE} binding for one of the
-     *       user's roles, regardless of {@code app_route}
-     *       membership. This path catches routes that
-     *       intentionally escape any app boundary, plus
-     *       ad-hoc per-route grants.</li>
-     * </ol>
-     *
-     * <p><b>Source of truth is {@code app_route}</b> — the M:N
-     * that {@code AppService.bindRoute}/{@code unbindRoute} (the
-     * App edit page's route picker) exclusively mutate. {@code Route}
-     * has no "primary app" FK; {@code app_route} membership is the
-     * only relationship between a route and its app(s).
-     *
-     * <p>Spring Data binds {@code :roleIds} as a Postgres
-     * {@code BIGINT[]} via the JPQL {@code IN} clause. The
-     * {@code DISTINCT} deduplicates routes that match both
-     * paths (a route in an app that ALSO has a direct role
-     * binding would otherwise appear twice).
+     * <p><b>{@code role_route} is the sole source of truth for
+     * menu visibility.</b> {@code role_app} (does this role have
+     * permission to use an app at all — see
+     * {@code SsoAdminAppAccessManager}) and {@code app_route}
+     * (which app a route belongs to) answer a different
+     * question and don't grant menu visibility by themselves.
+     * This used to also be a UNION with a "broad" path — any
+     * role with {@code role_app} access to an app saw every
+     * route {@code app_route}-bound to it — which made the
+     * per-route {@code role_route} toggle on the Route edit
+     * page's Roles tab a no-op for any such role: unbinding a
+     * role from one specific route did nothing because the
+     * app-level grant still applied. Removed so {@code
+     * role_route} is the single, predictable knob — whatever's
+     * checked there is exactly what that role sees, independent
+     * of app membership and independent of role name (no role,
+     * including ADMIN, gets an implicit bypass).
      *
      * <p>Ordering: {@code MENUORDER} ASC breaks ties on
      * {@code ID_ROUTE} ASC — gives a stable order across
@@ -74,39 +63,29 @@ public interface RouteRepository extends JpaRepository<Route, Long> {
      * {@code menuOrder}.
      */
     @Query("""
-            SELECT DISTINCT r FROM Route r
-            WHERE r.id IN (
-                SELECT r2.id FROM App a2 JOIN a2.routes r2 JOIN a2.roles rol2
-                 WHERE rol2.id IN :roleIds
-                UNION
-                SELECT r3.id FROM Route r3 JOIN r3.roles rol3
-                 WHERE rol3.id IN :roleIds
-            )
+            SELECT DISTINCT r FROM Route r JOIN r.roles rol
+            WHERE rol.id IN :roleIds
             ORDER BY r.menuOrder ASC, r.id ASC
             """)
     List<Route> findVisibleForRoles(@Param("roleIds") Collection<Long> roleIds);
 
     /**
      * Scoped variant of {@link #findVisibleForRoles(Collection)}:
-     * restricts the result to routes that are members (via
+     * intersects with routes that are members (via
      * {@code app_route}) of the given app. Powers the
      * {@code GET /sso-admin/myMenu?app=<name>} endpoint, where the
      * SPA's {@code VITE_APP_NAME} is resolved to an
      * {@link com.co.eurekatic.common.entity.App} id on the
      * backend and used here as the scoping filter.
      *
-     * <p>Same {@code app_route}-based source of truth as
-     * {@link #findVisibleForRoles(Collection)} — see that
-     * method's Javadoc. The {@code appId} predicate is applied
-     * to BOTH branches of the inner UNION (not just the broad
-     * one): a route can simultaneously satisfy the App-grant
-     * branch AND the fine-grained branch, and without the filter
-     * on branch 2 a route that's only a member of {@code OtherApp}
-     * but ALSO has a direct {@code role_route} binding would leak
-     * through when the caller asked for {@code ThisApp}. Adding
-     * it to both keeps the scoped result a true intersection of
-     * "visible to caller's roles" AND "is a member (via
-     * app_route) of the requested app".
+     * <p>The grant is still {@code role_route}-only (see
+     * {@link #findVisibleForRoles(Collection)}) — {@code appId}
+     * here only narrows an already-granted set down to "and
+     * also belongs to this app", so a role whose {@code
+     * role_route} spans multiple apps' routes doesn't see
+     * another app's items when the SPA asks for its own.
+     * {@code app_route} membership never grants anything by
+     * itself.
      *
      * <p>Same ordering as the un-scoped overload — the response
      * shape is unchanged.
@@ -117,19 +96,12 @@ public interface RouteRepository extends JpaRepository<Route, Long> {
      * can I see?" contract.
      */
     @Query("""
-            SELECT DISTINCT r FROM Route r
-            WHERE r.id IN (
-                SELECT r2.id FROM App a2 JOIN a2.routes r2 JOIN a2.roles rol2
-                 WHERE rol2.id IN :roleIds
-                   AND a2.id = :appId
-                UNION
-                SELECT r3.id FROM Route r3 JOIN r3.roles rol3
-                 WHERE rol3.id IN :roleIds
-                   AND r3.id IN (
-                       SELECT r4.id FROM App a4 JOIN a4.routes r4
-                        WHERE a4.id = :appId
-                   )
-            )
+            SELECT DISTINCT r FROM Route r JOIN r.roles rol
+            WHERE rol.id IN :roleIds
+              AND r.id IN (
+                  SELECT r2.id FROM App a2 JOIN a2.routes r2
+                   WHERE a2.id = :appId
+              )
             ORDER BY r.menuOrder ASC, r.id ASC
             """)
     List<Route> findVisibleForRoles(
