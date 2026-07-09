@@ -77,6 +77,16 @@ export const usersApi = {
     apiClient.get<UserRoleChecked[]>(`/sso-admin/user/roles/checked?userId=${userId}`),
   create: (body: CreateAccountRequest) => apiClient.post<UserResponse>("/sso-admin/createAccount", body),
   update: (body: UpdateAccountRequest) => apiClient.put<UserResponse>("/sso-admin/updateAccount", body),
+  // Only valid while the user is PENDING_ACTIVATION / ACTIVE /
+  // INACTIVE respectively — the backend returns 409 otherwise.
+  resendActivation: (userId: number) =>
+    apiClient.post<void>(`/sso-admin/resendActivation/${userId}`),
+  deactivate: (userId: number, reason?: string) =>
+    apiClient.post<void>(
+      `/sso-admin/deactivateAccount/${userId}${reason ? `?reason=${encodeURIComponent(reason)}` : ""}`,
+    ),
+  reactivate: (userId: number) =>
+    apiClient.post<void>(`/sso-admin/reactivateAccount/${userId}`),
   bindRole: (body: BindUserRoleRequest) => apiClient.post<void>("/sso-admin/bindUserRole", body),
   unbindRole: (userId: number, roleId: number) =>
     apiClient.delete<void>(

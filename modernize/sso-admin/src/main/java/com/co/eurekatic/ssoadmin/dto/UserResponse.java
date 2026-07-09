@@ -1,6 +1,7 @@
 package com.co.eurekatic.ssoadmin.dto;
 
 import com.co.eurekatic.common.entity.User;
+import com.co.eurekatic.common.entity.User.UserStatus;
 
 import java.util.List;
 import java.util.Set;
@@ -18,6 +19,7 @@ public record UserResponse(
         String email,
         boolean active,
         boolean ldap,
+        UserStatus status,
         Set<String> roleNames
 ) {
     public static UserResponse fromEntity(User u) {
@@ -30,6 +32,7 @@ public record UserResponse(
                 u.getEmail(),
                 u.isActive(),
                 u.isLdap(),
+                u.getStatus(),
                 roles);
     }
 

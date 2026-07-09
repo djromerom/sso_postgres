@@ -17,6 +17,7 @@ import lombok.Setter;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Objects;
@@ -116,6 +117,14 @@ public class User implements UserDetails {
     @Column(name = "token_restore", length = 64)
     private String tokenRestore;
 
+    /** Null when no activation token is currently issued (mirrors {@link #tokenActivation}). */
+    @Column(name = "token_activation_expires_at")
+    private Instant tokenActivationExpiresAt;
+
+    /** Null when no restore token is currently issued (mirrors {@link #tokenRestore}). */
+    @Column(name = "token_restore_expires_at")
+    private Instant tokenRestoreExpiresAt;
+
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
             name = "role_users",
@@ -200,6 +209,33 @@ public class User implements UserDetails {
     @Override
     public boolean isEnabled() {
         return enabled && active;
+    }
+
+    /**
+     * Derived status for API/UI display — not a stored column.
+     * {@code enabled}/{@code active} already encode three
+     * distinguishable states unambiguously (see
+     * {@code UserAdminService#createAccount}/{@code #activateAccount}/
+     * {@code #deactivateAccount}), so this is computed rather than
+     * persisted separately to avoid a second source of truth.
+     */
+    public UserStatus getStatus() {
+        if (!active) {
+            return UserStatus.INACTIVE;
+        }
+        return enabled ? UserStatus.ACTIVE : UserStatus.PENDING_ACTIVATION;
+    }
+
+    /**
+     * @see #getStatus()
+     */
+    public enum UserStatus {
+        /** Created by an admin, activation email sent, password not yet set. */
+        PENDING_ACTIVATION,
+        /** Activated and able to log in. */
+        ACTIVE,
+        /** Deactivated by an admin (was ACTIVE or PENDING_ACTIVATION). */
+        INACTIVE
     }
 
     /* ====================== equality ====================== */

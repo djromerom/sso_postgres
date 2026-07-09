@@ -60,6 +60,37 @@ export function useUpdateUser() {
   });
 }
 
+export function useResendActivation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: number) => usersApi.resendActivation(userId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: userKeys.list() });
+    },
+  });
+}
+
+export function useDeactivateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, reason }: { userId: number; reason?: string }) =>
+      usersApi.deactivate(userId, reason),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: userKeys.list() });
+    },
+  });
+}
+
+export function useReactivateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: number) => usersApi.reactivate(userId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: userKeys.list() });
+    },
+  });
+}
+
 export function useBindUserRole() {
   const qc = useQueryClient();
   return useMutation({

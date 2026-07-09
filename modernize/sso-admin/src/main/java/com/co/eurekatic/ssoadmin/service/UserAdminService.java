@@ -2,6 +2,7 @@ package com.co.eurekatic.ssoadmin.service;
 
 import com.co.eurekatic.common.entity.Role;
 import com.co.eurekatic.common.entity.User;
+import com.co.eurekatic.common.entity.User.UserStatus;
 import com.co.eurekatic.common.repository.RoleRepository;
 import com.co.eurekatic.common.repository.UserRepository;
 import com.co.eurekatic.ssoadmin.config.EmailProperties;
@@ -10,6 +11,7 @@ import com.co.eurekatic.ssoadmin.dto.UpdateAccountRequest;
 import com.co.eurekatic.ssoadmin.dto.UserResponse;
 import com.co.eurekatic.ssoadmin.event.NotificationEventPublisher;
 import com.co.eurekatic.ssoadmin.exception.EmailInvalidException;
+import com.co.eurekatic.ssoadmin.exception.InvalidUserStateException;
 import com.co.eurekatic.ssoadmin.exception.NotFoundException;
 import com.co.eurekatic.ssoadmin.exception.UserDuplicateException;
 import org.slf4j.Logger;
@@ -52,6 +54,18 @@ import java.util.stream.Collectors;
  *       silently even if the email is unknown, to avoid leaking
  *       which addresses are registered. The user types a new
  *       password at {@code POST /restorePassword}.</li>
+ *   <li>{@link #resendActivation} — only valid while
+ *       {@link User#getStatus()} is PENDING_ACTIVATION; reissues
+ *       the activation token and republishes the email (V13
+ *       tokens expire, so this is how an admin recovers a user
+ *       who missed the window).</li>
+ *   <li>{@link #deactivateAccount} / {@link #reactivateAccount} —
+ *       explicit ACTIVE ⇄ INACTIVE transitions, guarded by
+ *       {@link User#getStatus()}. Deactivating flips
+ *       {@code active=false}, which {@link User#isEnabled()}
+ *       already treats as "can't log in" — see the class javadoc
+ *       on {@code RefreshTokenStore} for the separate concern of
+ *       revoking already-issued sessions.</li>
  * </ul>
  */
 @Service
@@ -132,20 +146,83 @@ public class UserAdminService {
             }
         }
 
-        String token = tokenService.issueActivationToken(user);
+        tokenService.issueActivationToken(user);
         User saved = userRepository.save(user);
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("displayName", saved.getFullName() == null ? saved.getEmail() : saved.getFullName());
-        payload.put("email", saved.getEmail());
-        payload.put("activationLink", emailProps.activationUrl() + "?token=" + token);
-        payload.put("ttlMinutes", 60);
-        events.publish("email", String.valueOf(saved.getId()), saved.getEmail(),
-                "account-activation", payload, null);
+        publishActivationEmail(saved);
 
         log.info("Created user '{}' (active=true, enabled=false, pending activation)",
                 saved.getEmail());
         return UserResponse.fromEntity(saved);
+    }
+
+    /**
+     * Reissues an activation token for a user still in
+     * {@link UserStatus#PENDING_ACTIVATION} and republishes the
+     * activation email — for when the original token expired
+     * (or the email was lost) before the user activated.
+     * Overwrites any still-live token, same idempotent-reissue
+     * pattern as {@link #forgotPassword}.
+     */
+    @Transactional
+    public void resendActivation(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("User", userId));
+        if (user.getStatus() != UserStatus.PENDING_ACTIVATION) {
+            throw new InvalidUserStateException("Resend activation", user.getStatus(), UserStatus.PENDING_ACTIVATION);
+        }
+        tokenService.issueActivationToken(user);
+        User saved = userRepository.save(user);
+        publishActivationEmail(saved);
+        log.info("Resent activation email for user '{}'", saved.getEmail());
+    }
+
+    private void publishActivationEmail(User user) {
+        String token = user.getTokenActivation();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("displayName", user.getFullName() == null ? user.getEmail() : user.getFullName());
+        payload.put("email", user.getEmail());
+        payload.put("activationLink", emailProps.activationUrl() + "?token=" + token);
+        payload.put("ttlMinutes", TokenService.ACTIVATION_TTL_MINUTES);
+        events.publish("email", String.valueOf(user.getId()), user.getEmail(),
+                "account-activation", payload, null);
+    }
+
+    /**
+     * Deactivates an ACTIVE user: blocks future login (via
+     * {@link User#isEnabled()}) and publishes the existing
+     * {@code account-deactivated} notification. Does NOT revoke
+     * already-issued JWT/refresh tokens yet — that lands
+     * alongside {@code RefreshTokenStore.revokeAllForUser} in a
+     * follow-up change.
+     */
+    @Transactional
+    public void deactivateAccount(Long userId, String reason) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("User", userId));
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new InvalidUserStateException("Deactivate", user.getStatus(), UserStatus.ACTIVE);
+        }
+        user.setActive(false);
+        User saved = userRepository.save(user);
+        publishAccountDeactivated(saved, reason == null || reason.isBlank() ? "Deactivated by admin" : reason);
+        log.info("Deactivated user '{}'", saved.getEmail());
+    }
+
+    /**
+     * Reactivates a previously deactivated user. Counterpart to
+     * {@link #deactivateAccount}.
+     */
+    @Transactional
+    public void reactivateAccount(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("User", userId));
+        if (user.getStatus() != UserStatus.INACTIVE) {
+            throw new InvalidUserStateException("Reactivate", user.getStatus(), UserStatus.INACTIVE);
+        }
+        user.setActive(true);
+        User saved = userRepository.save(user);
+        publishAccountReactivated(saved);
+        log.info("Reactivated user '{}'", saved.getEmail());
     }
 
     /**
@@ -396,5 +473,13 @@ public class UserAdminService {
         payload.put("reason", reason);
         events.publish("email", String.valueOf(user.getId()), user.getEmail(),
                 "account-deactivated", payload, null);
+    }
+
+    private void publishAccountReactivated(User user) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("displayName", user.getFullName() == null ? user.getEmail() : user.getFullName());
+        payload.put("email", user.getEmail());
+        events.publish("email", String.valueOf(user.getId()), user.getEmail(),
+                "account-reactivated", payload, null);
     }
 }

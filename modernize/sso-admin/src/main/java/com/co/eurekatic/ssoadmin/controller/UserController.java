@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -93,6 +94,39 @@ public class UserController {
     @GetMapping("/getUsers")
     public List<UserResponse> getUsers() {
         return service.getUsers();
+    }
+
+    /**
+     * ADMIN-only — reissues the activation token and resends the
+     * activation email for a user still pending activation (e.g.
+     * the original token expired). 409 if the user isn't in
+     * PENDING_ACTIVATION status.
+     */
+    @PostMapping("/resendActivation/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resendActivation(@PathVariable Long id) {
+        service.resendActivation(id);
+    }
+
+    /**
+     * ADMIN-only — deactivates an ACTIVE user (blocks future
+     * login). 409 if the user isn't currently ACTIVE.
+     */
+    @PostMapping("/deactivateAccount/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deactivateAccount(@PathVariable Long id,
+                                   @RequestParam(required = false) String reason) {
+        service.deactivateAccount(id, reason);
+    }
+
+    /**
+     * ADMIN-only — reactivates a previously deactivated user.
+     * 409 if the user isn't currently INACTIVE.
+     */
+    @PostMapping("/reactivateAccount/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void reactivateAccount(@PathVariable Long id) {
+        service.reactivateAccount(id);
     }
 
     /**

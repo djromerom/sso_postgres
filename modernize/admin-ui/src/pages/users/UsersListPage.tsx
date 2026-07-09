@@ -4,6 +4,9 @@ import { Table, type Column } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import {
   useCreateUser,
+  useDeactivateUser,
+  useReactivateUser,
+  useResendActivation,
   useUpdateUser,
   useUsers,
 } from "@/hooks/useUsers";
@@ -14,13 +17,43 @@ import type {
 } from "@/api/types";
 import { UserFormDrawer } from "./UserFormDrawer";
 
+const STATUS_BADGE: Record<UserResponse["status"], { label: string; className: string }> = {
+  PENDING_ACTIVATION: {
+    label: "Pendiente de activación",
+    className: "bg-amber-100 text-amber-800",
+  },
+  ACTIVE: { label: "Activo", className: "bg-emerald-100 text-emerald-800" },
+  INACTIVE: { label: "Inactivo", className: "bg-slate-200 text-slate-700" },
+};
+
 export function UsersListPage() {
   const users = useUsers();
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
+  const resendActivation = useResendActivation();
+  const deactivateUser = useDeactivateUser();
+  const reactivateUser = useReactivateUser();
   const toast = useToast();
   const [editing, setEditing] = useState<UserResponse | null>(null);
   const [creating, setCreating] = useState(false);
+
+  async function handleResendActivation(u: UserResponse) {
+    await resendActivation.mutateAsync(u.id);
+    toast.show(`Correo de activación reenviado a ${u.email}`, "success");
+  }
+
+  async function handleDeactivate(u: UserResponse) {
+    if (!window.confirm(`¿Inactivar a ${u.email}? No podrá volver a iniciar sesión.`)) {
+      return;
+    }
+    await deactivateUser.mutateAsync({ userId: u.id });
+    toast.show(`Usuario ${u.email} inactivado`, "success");
+  }
+
+  async function handleReactivate(u: UserResponse) {
+    await reactivateUser.mutateAsync(u.id);
+    toast.show(`Usuario ${u.email} reactivado`, "success");
+  }
 
   async function handleSubmit(values: CreateAccountRequest | UpdateAccountRequest) {
     if ("id" in values) {
@@ -49,18 +82,16 @@ export function UsersListPage() {
     { key: "email", header: "Email", render: (u) => u.email },
     { key: "fullName", header: "Nombre", render: (u) => u.fullName },
     {
-      key: "active",
+      key: "status",
       header: "Estado",
-      render: (u) =>
-        u.active ? (
-          <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">
-            Activo
+      render: (u) => {
+        const badge = STATUS_BADGE[u.status];
+        return (
+          <span className={`rounded px-2 py-0.5 text-xs ${badge.className}`}>
+            {badge.label}
           </span>
-        ) : (
-          <span className="rounded bg-slate-200 px-2 py-0.5 text-xs text-slate-700">
-            Inactivo
-          </span>
-        ),
+        );
+      },
     },
     {
       key: "ldap",
@@ -78,9 +109,30 @@ export function UsersListPage() {
       header: "",
       align: "right",
       render: (u) => (
-        <Button size="sm" variant="secondary" onClick={() => setEditing(u)}>
-          Editar
-        </Button>
+        <div className="flex justify-end gap-2">
+          {u.status === "PENDING_ACTIVATION" && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void handleResendActivation(u)}
+            >
+              Reenviar activación
+            </Button>
+          )}
+          {u.status === "ACTIVE" && (
+            <Button size="sm" variant="secondary" onClick={() => void handleDeactivate(u)}>
+              Inactivar
+            </Button>
+          )}
+          {u.status === "INACTIVE" && (
+            <Button size="sm" variant="secondary" onClick={() => void handleReactivate(u)}>
+              Reactivar
+            </Button>
+          )}
+          <Button size="sm" variant="secondary" onClick={() => setEditing(u)}>
+            Editar
+          </Button>
+        </div>
       ),
     },
   ];

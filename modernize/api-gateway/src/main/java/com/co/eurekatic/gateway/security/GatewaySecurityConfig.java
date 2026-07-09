@@ -126,7 +126,19 @@ public class GatewaySecurityConfig {
                         // auth-center endpoints — see application.yml).
                         // /api/sso-admin/** is intentionally NOT in this
                         // list; those calls carry a Bearer token and
-                        // fall through to anyExchange().authenticated().
+                        // fall through to anyExchange().authenticated() —
+                        // EXCEPT the three below, which mirror
+                        // sso-admin's own SecurityConfig permitAll list
+                        // (activateAccount/restorePassword/forgotPassword
+                        // are the email-link flow: the user has no
+                        // Bearer token yet, same as /login above). This
+                        // matcher was missing entirely, so the /api/**
+                        // path the SPA actually calls 401'd at the
+                        // gateway before ever reaching sso-admin —
+                        // found while testing the token-expiry flow.
+                        .pathMatchers("/api/sso-admin/activateAccount",
+                                "/api/sso-admin/restorePassword",
+                                "/api/sso-admin/forgotPassword").permitAll()
                         .pathMatchers("/auth/login").permitAll()
                         .pathMatchers("/api/auth/login").permitAll()
                         .pathMatchers("/api/auth/refresh", "/api/auth/logout").permitAll()

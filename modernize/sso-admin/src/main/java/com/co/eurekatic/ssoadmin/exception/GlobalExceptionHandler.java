@@ -45,6 +45,16 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.NOT_FOUND, "TOKEN_NOT_FOUND", ex.getMessage());
     }
 
+    @ExceptionHandler(TokenExpiredException.class)
+    public ResponseEntity<Map<String, Object>> handleTokenExpired(TokenExpiredException ex) {
+        return error(HttpStatus.GONE, "TOKEN_EXPIRED", ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidUserStateException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidUserState(InvalidUserStateException ex) {
+        return error(HttpStatus.CONFLICT, "INVALID_USER_STATE", ex.getMessage());
+    }
+
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(NotFoundException ex) {
         return error(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage());

@@ -32,6 +32,8 @@ export interface UserSummary {
 
 // ====================== sso-admin / users ======================
 
+export type UserStatus = "PENDING_ACTIVATION" | "ACTIVE" | "INACTIVE";
+
 export interface UserResponse {
   id: number;
   fullName: string;
@@ -39,6 +41,7 @@ export interface UserResponse {
   active: boolean;
   enabled: boolean;
   ldap: boolean;
+  status: UserStatus;
   roleNames: string[];
 }
 
