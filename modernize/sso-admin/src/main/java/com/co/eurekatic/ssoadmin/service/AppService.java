@@ -14,6 +14,8 @@ import com.co.eurekatic.ssoadmin.dto.AppRequest;
 import com.co.eurekatic.ssoadmin.dto.AppResponse;
 import com.co.eurekatic.ssoadmin.exception.DuplicateException;
 import com.co.eurekatic.ssoadmin.exception.NotFoundException;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,17 +52,20 @@ public class AppService {
     private final UserRepository userRepo;
     private final RouteRepository routeRepo;
     private final MicroserviceRepository microserviceRepo;
+    private final CacheManager cacheManager;
 
     public AppService(AppRepository appRepo,
                       RoleRepository roleRepo,
                       UserRepository userRepo,
                       RouteRepository routeRepo,
-                      MicroserviceRepository microserviceRepo) {
+                      MicroserviceRepository microserviceRepo,
+                      CacheManager cacheManager) {
         this.appRepo = appRepo;
         this.roleRepo = roleRepo;
         this.userRepo = userRepo;
         this.routeRepo = routeRepo;
         this.microserviceRepo = microserviceRepo;
+        this.cacheManager = cacheManager;
     }
 
     /* ====================== CRUD ====================== */
@@ -121,6 +126,7 @@ public class AppService {
         Role role = roleRepo.findById(roleId)
                 .orElseThrow(() -> new NotFoundException("Role", roleId));
         app.addRole(role);
+        evictAppAccessCache(app.getName(), role.getName());
     }
 
     @Transactional
@@ -129,6 +135,22 @@ public class AppService {
         Role role = roleRepo.findById(roleId)
                 .orElseThrow(() -> new NotFoundException("Role", roleId));
         app.removeRole(role);
+        evictAppAccessCache(app.getName(), role.getName());
+    }
+
+    /**
+     * Invalidates {@code AppAccessService}'s cached "does this role
+     * have access to this app" entry right away, so
+     * {@code SsoAdminAppAccessManager} sees the change on the very
+     * next request instead of waiting out the TTL. The key shape
+     * (`appName + ":" + roleName`) must stay in sync with
+     * {@code AppAccessService#hasAccess}'s {@code @Cacheable} key.
+     */
+    private void evictAppAccessCache(String appName, String roleName) {
+        Cache cache = cacheManager.getCache("app-access");
+        if (cache != null) {
+            cache.evict(appName + ":" + roleName);
+        }
     }
 
     @Transactional(readOnly = true)

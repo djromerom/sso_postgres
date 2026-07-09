@@ -357,6 +357,11 @@ services:
         # until healthy avoids races with notification-service
         # binding the queues at boot.
         condition: service_healthy
+      redis:
+        # Backs the app-access cache (SsoAdminAppAccessManager /
+        # AppAccessService) — same instance auth-center uses for
+        # refresh tokens, distinct key namespace.
+        condition: service_healthy
     ports:
       - "${SSO_ADMIN_PORT:-8083}:8083"
     environment:
@@ -403,6 +408,12 @@ services:
       RABBITMQ_PORT: "5672"
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASS: ${RABBITMQ_PASS}
+      # App-access cache (SsoAdminAppAccessManager /
+      # AppAccessService). Same Redis instance + credentials
+      # auth-center already uses for refresh tokens.
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8083; printf 'GET /actuator/health HTTP/1.0\r\n\r\n' >&3; grep -q UP <&3"]
       interval: 10s

@@ -70,6 +70,18 @@ spring:
     prefer-file-system-access: false
     default-encoding: UTF-8
 
+  # Backs the "app-access" cache (SsoAdminAppAccessManager /
+  # AppAccessService) — same Redis instance auth-center already
+  # uses for refresh tokens, distinct key namespace (the cache
+  # name "app-access" is Spring's default key prefix, so no
+  # collision with auth-center's own key scheme).
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+
   # AMQP producer for notification events. sso-admin publishes
   # to the `notifications` topic exchange; notification-service
   # consumes per channel. Connection details match the rest of
@@ -138,6 +150,18 @@ sso:
   # SSO_PROVISIONER_BASE_URL=http://localhost:9000.
   provisioner:
     base-url: ${SSO_PROVISIONER_BASE_URL:http://provisioner:9000}
+  admin:
+    # The App.name row (seeded by V10) that identifies THIS
+    # console. SsoAdminAppAccessManager requires the caller to
+    # hold ROLE_ADMIN AND have a role bound (role_app) to this
+    # app — see SecurityConfig. Distinct from sso.email.app-name
+    # below, which is just branding text for outgoing emails.
+    app-name: ${SSO_ADMIN_APP_NAME:SSO-ADMIN}
+    # TTL for the app-access cache (AppAccessService). Bindings
+    # rarely change and AppService.bindRole/unbindRole evict the
+    # relevant entry immediately on write, so this TTL is only a
+    # safety net for out-of-band DB edits — doesn't need to be short.
+    app-access-cache-ttl: ${SSO_ADMIN_APP_ACCESS_CACHE_TTL:5m}
   email:
     # Branding + URLs for activation and restore-password emails.
     # Override per environment.

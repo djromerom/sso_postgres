@@ -2,6 +2,7 @@ package com.co.eurekatic.ssoadmin.config;
 
 import com.co.eurekatic.common.security.JwtProperties;
 import com.co.eurekatic.common.security.JwtTokenService;
+import com.co.eurekatic.ssoadmin.service.AppAccessService;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,11 +24,13 @@ import java.util.List;
  * Spring Security 6 configuration for sso-admin.
  *
  * <p>Authorization model: every business endpoint requires
- * {@code ROLE_ADMIN}. The legacy sso-service checked the
- * username against an "admin" role inline; we keep that
- * behavior but use Spring Security's expression syntax
- * ({@code hasRole("ADMIN")}). A user with the ADMIN role on
- * their JWT can do anything; everyone else gets 403.
+ * {@code ROLE_ADMIN} AND the caller's roles must have a
+ * {@code role_app} binding to this console's app (see
+ * {@link SsoAdminAppAccessManager}, {@code sso.admin.app-name}).
+ * Before this, {@code role_app} only controlled what
+ * {@code /myMenu} showed in the sidebar — any caller with a role
+ * literally named {@code ADMIN} reached every endpoint here
+ * regardless of app scoping. Everyone else gets 403.
  *
  * <p>Public endpoints:
  * <ul>
@@ -70,10 +73,18 @@ import java.util.List;
 public class SecurityConfig {
 
     @Bean
+    public SsoAdminAppAccessManager ssoAdminAppAccessManager(
+            AppAccessService appAccessService,
+            AdminAccessProperties adminAccessProperties) {
+        return new SsoAdminAppAccessManager(appAccessService, adminAccessProperties.appName());
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtTokenService jwt,
-            JwtProperties jwtProperties) throws Exception {
+            JwtProperties jwtProperties,
+            SsoAdminAppAccessManager ssoAdminAppAccessManager) throws Exception {
 
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwt, jwtProperties);
 
@@ -114,8 +125,13 @@ public class SecurityConfig {
                         // bypass + publicEnd bypass + role
                         // intersection), same as /getQuery.
                         .requestMatchers("/getQuery", "/getWrite", "/myQueries", "/myMenu").authenticated()
-                        // Everything else requires ADMIN.
-                        .anyRequest().hasRole("ADMIN"))
+                        // Everything else requires ROLE_ADMIN AND a
+                        // role_app binding to this app — see
+                        // SsoAdminAppAccessManager. Was bare
+                        // hasRole("ADMIN"); that let any ADMIN-named
+                        // role into every endpoint here regardless
+                        // of whether it was ever scoped to this app.
+                        .anyRequest().access(ssoAdminAppAccessManager))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }

@@ -86,6 +86,21 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
+
+        <!-- Caches the app-access check (does any of the caller's
+             roles have a role_app binding to this app?) so
+             SsoAdminAppAccessManager doesn't hit Postgres on every
+             single request. Same Redis instance auth-center already
+             uses for refresh tokens (distinct key namespace via the
+             "app-access" cache name — no collision). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
         <!--
             Spring Boot 4.0 split autoconfigure per-stack. AMQP
             (RabbitMQ connection factory + RabbitTemplate autoconfig)
