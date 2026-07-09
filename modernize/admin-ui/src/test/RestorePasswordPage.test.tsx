@@ -22,7 +22,7 @@ function renderRestore(initialEntry: string) {
             element={<RestorePasswordPage />}
           />
           <Route
-            path="/login"
+            path="/admin/login"
             element={<div data-testid="login-landing">login</div>}
           />
         </Routes>

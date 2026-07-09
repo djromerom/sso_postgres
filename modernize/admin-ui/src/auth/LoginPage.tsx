@@ -96,7 +96,7 @@ export function LoginPage() {
         </button>
 
         <Link
-          to="/forgot-password"
+          to="/admin/forgot-password"
           className="mt-4 block text-center text-sm text-sky-600 hover:underline"
         >
           ¿Olvidaste tu contraseña?

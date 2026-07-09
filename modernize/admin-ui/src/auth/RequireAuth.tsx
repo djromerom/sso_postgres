@@ -5,8 +5,8 @@ import { useAuth } from "./useAuth";
  * Route wrapper. While we're checking the silent refresh on mount
  * we show nothing (avoids a flash of the login page for already-
  * logged-in users). Once we know the state, redirect unauth'd
- * users to /login (preserving the attempted path in `from` so
- * the login page can navigate back on success).
+ * users to /admin/login (preserving the attempted path in `from`
+ * so the login page can navigate back on success).
  */
 export function RequireAuth() {
   const { status } = useAuth();
@@ -24,7 +24,7 @@ export function RequireAuth() {
     );
   }
   if (status === "unauthenticated") {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    return <Navigate to="/admin/login" replace state={{ from: location.pathname }} />;
   }
   return <Outlet />;
 }

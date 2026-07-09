@@ -52,7 +52,7 @@ export function ForgotPasswordPage() {
             correo con un enlace para restaurar tu contraseña.
           </p>
           <Link
-            to="/login"
+            to="/admin/login"
             className="mt-4 inline-block rounded bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700"
           >
             Volver a iniciar sesión
@@ -99,7 +99,7 @@ export function ForgotPasswordPage() {
         </button>
 
         <Link
-          to="/login"
+          to="/admin/login"
           className="mt-4 block text-center text-sm text-sky-600 hover:underline"
         >
           Volver a iniciar sesión

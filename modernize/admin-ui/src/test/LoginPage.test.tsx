@@ -17,14 +17,14 @@ import { LoginPage } from "@/auth/LoginPage";
  * {@code autoComplete="email"} and the visible label says
  * "Email".
  */
-function renderLogin(initialEntry = "/login") {
+function renderLogin(initialEntry = "/admin/login") {
   let result!: ReturnType<typeof render>;
   act(() => {
     result = render(
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <Routes>
-            <Route path="/login" element={<LoginPage />} />
+            <Route path="/admin/login" element={<LoginPage />} />
             <Route path="/admin" element={<div data-testid="admin-landing">admin</div>} />
           </Routes>
         </AuthProvider>
@@ -71,7 +71,7 @@ describe("LoginPage", () => {
       }),
     );
 
-    renderLogin("/login");
+    renderLogin("/admin/login");
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
 
     const user = userEvent.setup();
@@ -102,7 +102,7 @@ describe("LoginPage", () => {
     ); // empty menu — this role has no role_app binding to this app
     fetchSpy.mockResolvedValueOnce(new Response(null, { status: 204 })); // logout cleanup
 
-    renderLogin("/login");
+    renderLogin("/admin/login");
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
 
     const user = userEvent.setup();

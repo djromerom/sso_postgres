@@ -17,9 +17,9 @@ import { AppsListPage } from "@/pages/apps/AppsListPage";
 import { WritesListPage } from "@/pages/writes/WritesListPage";
 
 /**
- * Router. Public routes: /login, /forgot-password (request a
- * reset link — linked from LoginPage), /activate (legacy
- * top-level for already-sent emails), /admin/activate and
+ * Router. Public routes: /admin/login, /admin/forgot-password
+ * (request a reset link — linked from LoginPage), /activate
+ * (legacy top-level for already-sent emails), /admin/activate and
  * /admin/restore-password (the SPA-under-admin paths the email
  * links now point at). Everything else under /admin is gated
  * by {@link RequireAuth}. We use the data router so loaders
@@ -27,17 +27,28 @@ import { WritesListPage } from "@/pages/writes/WritesListPage";
  *
  * Note: in production, the api-gateway serves the SPA at /admin/**
  * and falls back to index.html for any unknown path. So the URL
- * stays /admin/users, /admin/roles, etc. The /admin/activate and
+ * stays /admin/users, /admin/roles, etc. The /admin/login,
+ * /admin/forgot-password, /admin/activate and
  * /admin/restore-password public routes MUST be declared above
  * the gated /admin parent so the more specific paths win
  * matching before the auth gate runs.
+ *
+ * All of these live under /admin rather than at top-level on
+ * purpose: api-gateway's GatewaySecurityConfig only permits
+ * unauthenticated requests under "/", "/admin", "/admin/**", and
+ * AdminUiGlobalFilter only serves the SPA under /admin/**. A
+ * top-level path (a bare /login or /forgot-password) 401s on a
+ * hard navigation (bookmark, typed URL, refresh) — the request
+ * never reaches React Router at all; e.g. a static SCG route with
+ * Path=/login forwards straight to auth-center's POST-only login
+ * endpoint instead of serving the SPA.
  */
 export const router = createBrowserRouter([
-  { path: "/login", element: <LoginPage /> },
+  { path: "/admin/login", element: <LoginPage /> },
   // Step 1 of the forgot-password flow: request the reset link.
   // Step 2 (/admin/restore-password) is where the emailed link
   // lands and the password actually changes.
-  { path: "/forgot-password", element: <ForgotPasswordPage /> },
+  { path: "/admin/forgot-password", element: <ForgotPasswordPage /> },
   // Legacy top-level route — emails sent before this branch
   // landed link here. Kept for one cycle of backward compat;
   // to be deleted once the next batch of activation emails

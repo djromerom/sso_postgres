@@ -24,7 +24,7 @@ function renderActivate(initialEntry: string) {
             element={<ActivatePage />}
           />
           <Route
-            path="/login"
+            path="/admin/login"
             element={<div data-testid="login-landing">login</div>}
           />
         </Routes>

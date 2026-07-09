@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { apiClient } from "@/api/client";
 
 /**
@@ -83,12 +83,12 @@ export function ActivatePage() {
             Activación de cuenta
           </h1>
           <p className="text-sm text-slate-700">{message}</p>
-          <a
-            href="/login"
+          <Link
+            to="/admin/login"
             className="mt-4 inline-block rounded bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700"
           >
             Ir a iniciar sesión
-          </a>
+          </Link>
         </div>
       </main>
     );

@@ -14,11 +14,11 @@ function renderForgot() {
   let result!: ReturnType<typeof render>;
   act(() => {
     result = render(
-      <MemoryRouter initialEntries={["/forgot-password"]}>
+      <MemoryRouter initialEntries={["/admin/forgot-password"]}>
         <Routes>
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/admin/forgot-password" element={<ForgotPasswordPage />} />
           <Route
-            path="/login"
+            path="/admin/login"
             element={<div data-testid="login-landing">login</div>}
           />
         </Routes>
