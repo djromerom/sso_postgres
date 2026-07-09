@@ -81,7 +81,13 @@ spring:
                 # authenticated /getToken has no controller left
                 # and would have been a 404 anyway, so there is
                 # nothing to forward.
-                - Path=/login,/getApiToken,/getInfoUser,/getUsersSSO,/googleLogin
+                #
+                # /myApps (added for the post-login app launcher) is
+                # NOT in any permitAll list at either security layer —
+                # it falls through to anyExchange().authenticated(),
+                # same as /api/sso-admin/**. The route entry here only
+                # enables forwarding; it doesn't loosen the gate.
+                - Path=/login,/getApiToken,/getInfoUser,/getUsersSSO,/googleLogin,/myApps
               filters:
                 - AddResponseHeader=X-Source, api-gateway
             # /api/** surface for the admin-ui SPA (VITE_API_BASE=/api).
@@ -99,6 +105,18 @@ spring:
               predicates:
                 - Path=/api/auth/login
                 - Method=POST
+              filters:
+                - StripPrefix=2
+                - AddResponseHeader=X-Source, api-gateway
+            # SPA-facing mirror of the bare /myApps above — same
+            # StripPrefix=2 shape as api-auth-login, since
+            # AuthController's method lives at the bare path, not
+            # under /auth/*.
+            - id: api-auth-myapps
+              uri: lb://auth-center
+              predicates:
+                - Path=/api/auth/myApps
+                - Method=GET
               filters:
                 - StripPrefix=2
                 - AddResponseHeader=X-Source, api-gateway

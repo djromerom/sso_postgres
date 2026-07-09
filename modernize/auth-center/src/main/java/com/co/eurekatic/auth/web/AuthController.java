@@ -1,15 +1,19 @@
 package com.co.eurekatic.auth.web;
 
 import com.co.eurekatic.auth.security.EffectiveRolesResolver;
+import com.co.eurekatic.common.dto.AuthDtos.AppSummary;
 import com.co.eurekatic.common.dto.AuthDtos.UserSummary;
 import com.co.eurekatic.common.entity.Role;
 import com.co.eurekatic.common.entity.User;
+import com.co.eurekatic.common.repository.AppRepository;
+import com.co.eurekatic.common.repository.RoleRepository;
 import com.co.eurekatic.common.repository.UserRepository;
 import com.co.eurekatic.common.security.AuthPrincipal;
 import com.co.eurekatic.common.security.JwtTokenService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -31,12 +35,17 @@ import java.util.stream.Collectors;
 public class AuthController {
 
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
+    private final AppRepository appRepository;
     private final JwtTokenService jwt;
     private final EffectiveRolesResolver effectiveRoles;
 
-    public AuthController(UserRepository userRepository, JwtTokenService jwt,
+    public AuthController(UserRepository userRepository, RoleRepository roleRepository,
+                           AppRepository appRepository, JwtTokenService jwt,
                            EffectiveRolesResolver effectiveRoles) {
         this.userRepository = userRepository;
+        this.roleRepository = roleRepository;
+        this.appRepository = appRepository;
         this.jwt = jwt;
         this.effectiveRoles = effectiveRoles;
     }
@@ -87,6 +96,42 @@ public class AuthController {
     }
 
     /**
+     * Apps the caller's roles have a {@code role_app} binding to —
+     * powers admin-ui's post-login launcher (0 or 1 apps: skip the
+     * picker and go straight in; 2+: let the user choose). Not
+     * gated to any particular app or authority, unlike sso-admin's
+     * endpoints — this is shared, app-agnostic infrastructure, the
+     * same category as {@link #getInfoUser}.
+     *
+     * <p>Role ids come from the JWT's granted authorities (the
+     * session's effective role set, group memberships included),
+     * not a fresh DB lookup of the user's direct roles — see
+     * {@link #roleNamesFromAuthorities} for why no prefix-stripping
+     * happens here, unlike sso-admin's equivalent. Reading off the
+     * JWT (rather than {@code User.getRoles()}) reflects exactly
+     * the role set already governing {@code role_app}/{@code
+     * role_route} elsewhere.
+     */
+    @GetMapping("/myApps")
+    public ResponseEntity<List<AppSummary>> myApps(Authentication authentication) {
+        Set<String> roleNames = roleNamesFromAuthorities(authentication);
+        if (roleNames.isEmpty()) {
+            return ResponseEntity.ok(List.of());
+        }
+        Set<Long> roleIds = roleRepository.findAll().stream()
+                .filter(r -> roleNames.contains(r.getName()))
+                .map(Role::getId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (roleIds.isEmpty()) {
+            return ResponseEntity.ok(List.of());
+        }
+        List<AppSummary> out = appRepository.findVisibleForRoles(roleIds).stream()
+                .map(a -> new AppSummary(a.getId(), a.getName(), a.getDescription(), a.getLaunchUrl()))
+                .toList();
+        return ResponseEntity.ok(out);
+    }
+
+    /**
      * Lists the active users in the system. Permit-all in the MVP
      * because the legacy endpoint was also unauthenticated; in
      * production this should be gated to {@code ADMIN}.
@@ -116,6 +161,30 @@ public class AuthController {
         if (p instanceof User u) return u.getEmail();
         if (p instanceof AuthPrincipal ap) return ap.email();
         return authentication.getName();
+    }
+
+    /**
+     * The session's effective role names off the JWT's granted
+     * authorities. Unlike sso-admin's JWT filter (which prefixes
+     * {@code ROLE_}, stripped by {@code MyMenuService
+     * .roleIdsFromAuth}), auth-center's own {@link
+     * com.co.eurekatic.auth.security.JwtAuthenticationFilter} builds
+     * authorities as bare role names ({@code new
+     * SimpleGrantedAuthority(roleName)} straight off the JWT's
+     * {@code roles} claim — see {@code .hasAuthority("ADMIN")} on
+     * {@code /getUsersSSO} for the same bare-name convention), so
+     * no prefix-stripping happens here.
+     */
+    private Set<String> roleNamesFromAuthorities(Authentication authentication) {
+        if (authentication == null) return Set.of();
+        Set<String> names = new LinkedHashSet<>();
+        for (GrantedAuthority ga : authentication.getAuthorities()) {
+            String a = ga.getAuthority();
+            if (a != null && !a.isBlank()) {
+                names.add(a);
+            }
+        }
+        return names;
     }
 
     private Set<String> roleNames(User u) {

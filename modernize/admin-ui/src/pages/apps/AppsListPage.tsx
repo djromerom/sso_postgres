@@ -57,6 +57,7 @@ export function AppsListPage() {
         id: values.id,
         name: values.name,
         description: values.description ?? null,
+        launchUrl: values.launchUrl ?? null,
       });
       toast.show("App actualizada", "success");
       // drawer stays open on edit; admin keeps working
@@ -64,6 +65,7 @@ export function AppsListPage() {
       await createApp.mutateAsync({
         name: values.name,
         description: values.description ?? null,
+        launchUrl: values.launchUrl ?? null,
       });
       toast.show("App creada", "success");
       setCreating(false);

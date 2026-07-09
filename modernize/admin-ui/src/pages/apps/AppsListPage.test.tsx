@@ -66,6 +66,7 @@ function mkApp(over: Partial<AppResponse> = {}): AppResponse {
     id: 1,
     name: "cockpit",
     description: "Dashboard de operaciones",
+    launchUrl: null,
     createdDate: "2026-06-01T00:00:00Z",
     roleIds: [10],
     userIds: [],

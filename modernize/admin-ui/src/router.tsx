@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { ActivatePage } from "@/auth/ActivatePage";
+import { AppLauncherPage } from "@/auth/AppLauncherPage";
 import { ForgotPasswordPage } from "@/auth/ForgotPasswordPage";
 import { LoginPage } from "@/auth/LoginPage";
 import { RequireAuth } from "@/auth/RequireAuth";
@@ -67,6 +68,11 @@ export const router = createBrowserRouter([
     path: "/admin",
     element: <RequireAuth />,
     children: [
+      // Post-login app picker — protected (needs the JWT to call
+      // /myApps), but standalone: no sidebar, not part of SSO-
+      // ADMIN's own navigation. Not to be confused with "apps"
+      // below (the Apps CRUD admin screen, inside <App>).
+      { path: "select-app", element: <AppLauncherPage /> },
       {
         element: <App />,
         children: [

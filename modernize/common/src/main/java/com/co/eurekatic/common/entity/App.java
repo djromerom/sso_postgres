@@ -73,6 +73,15 @@ public class App {
     private String description;
 
     /**
+     * Where clicking this app takes the user, post-login. A
+     * relative path (e.g. {@code /admin/}) means "this same SPA";
+     * an absolute URL means an external app entirely — see
+     * {@code AppLauncherPage} in admin-ui.
+     */
+    @Column(name = "launch_url", length = 500)
+    private String launchUrl;
+
+    /**
      * DB-managed timestamp. JPA marks it
      * {@code insertable=false, updatable=false} so we don't
      * fight the {@code DEFAULT CURRENT_TIMESTAMP}.
