@@ -18,7 +18,7 @@ import java.util.Properties;
 
 /**
  * SMTP email provider. One bean per {@code providerKey}
- * (smtp-brevo, smtp-gmail) — wired by
+ * (smtp-brevo, smtp-gmail, smtp-mailhog) — wired by
  * {@link EmailProviderConfig}. Each instance reads its
  * host/port/credentials from {@code provider_config.settings}
  * via {@link ProviderRegistry#settingsFor(String)} on every
@@ -39,6 +39,13 @@ import java.util.Properties;
  * <p>{@code username_env} / {@code password_env} hold the
  * <em>names</em> of environment variables, not the secrets
  * themselves — credentials never sit in the DB.
+ *
+ * <p>Both keys are optional — a row with neither (e.g.
+ * {@code smtp-mailhog}) targets a relay that needs no
+ * authentication at all. When present, both must resolve to a
+ * non-blank env value or the row is treated as unconfigured
+ * (see {@link #isConfigured()}); AUTH is only attempted when
+ * both actually resolve (see {@link #senderFor}).
  */
 public class SmtpEmailProvider implements ChannelProvider {
 
@@ -64,12 +71,21 @@ public class SmtpEmailProvider implements ChannelProvider {
     @Override
     public boolean isConfigured() {
         Map<String, Object> settings = registry.settingsFor(providerKey).orElse(Map.of());
+        String host = str(settings, "host");
+        if (host == null) {
+            return false;
+        }
+        // A row with no username_env/password_env keys (e.g. a dev
+        // relay like MailHog) needs no credentials at all. A row that
+        // DOES declare them must resolve to a non-blank env value —
+        // present-but-empty (Docker Compose's `VAR: ${VAR:-}`) counts
+        // as missing, not as "configured with an empty secret".
         String userEnv = str(settings, "username_env");
         String passEnv = str(settings, "password_env");
-        String host = str(settings, "host");
-        return host != null
-                && userEnv != null && System.getenv(userEnv) != null
-                && passEnv != null && System.getenv(passEnv) != null;
+        if (userEnv == null && passEnv == null) {
+            return true;
+        }
+        return hasText(getenv(userEnv)) && hasText(getenv(passEnv));
     }
 
     @Override
@@ -101,11 +117,22 @@ public class SmtpEmailProvider implements ChannelProvider {
         JavaMailSenderImpl impl = new JavaMailSenderImpl();
         impl.setHost(str(settings, "host"));
         impl.setPort(intOr(settings, "port", 587));
-        impl.setUsername(System.getenv(str(settings, "username_env")));
-        impl.setPassword(System.getenv(str(settings, "password_env")));
+        // Only set credentials — and only turn AUTH on — when both
+        // resolve to a real value. Spring's JavaMailSenderImpl treats an
+        // empty-string username as "unset" and substitutes the JVM's OS
+        // user instead, which then fails auth against ANY server. A row
+        // with no credentials (e.g. a dev relay like MailHog) must skip
+        // AUTH entirely rather than attempt it with blanks.
+        String user = getenv(str(settings, "username_env"));
+        String pass = getenv(str(settings, "password_env"));
+        boolean hasAuth = hasText(user) && hasText(pass);
+        if (hasAuth) {
+            impl.setUsername(user);
+            impl.setPassword(pass);
+        }
         Properties props = impl.getJavaMailProperties();
         boolean startTls = bool(settings, "starttls");
-        props.put("mail.smtp.auth", "true");
+        props.put("mail.smtp.auth", String.valueOf(hasAuth));
         props.put("mail.smtp.starttls.enable", String.valueOf(startTls));
         props.put("mail.smtp.connectiontimeout", "5000");
         props.put("mail.smtp.timeout", "5000");
@@ -132,5 +159,16 @@ public class SmtpEmailProvider implements ChannelProvider {
         if (v instanceof Boolean b) return b;
         if (v == null) return false;
         return Boolean.parseBoolean(v.toString());
+    }
+
+    private static boolean hasText(String s) {
+        return s != null && !s.isBlank();
+    }
+
+    /** {@code System.getenv} throws NPE on a null name — a row with no
+     * {@code username_env}/{@code password_env} key resolves {@code str()}
+     * to null, so every lookup here must guard against that. */
+    private static String getenv(String name) {
+        return name == null ? null : System.getenv(name);
     }
 }
