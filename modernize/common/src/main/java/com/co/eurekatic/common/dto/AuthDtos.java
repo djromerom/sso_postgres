@@ -64,4 +64,16 @@ public final class AuthDtos {
             @NotBlank @Email @Size(max = 200) String email,
             @Size(max = 200) String fullName) {
     }
+
+    /**
+     * One entry of {@code GET /myApps} — the apps the caller's
+     * roles have a {@code role_app} binding to. {@code launchUrl}
+     * is null if an admin hasn't configured one yet for that app.
+     */
+    public record AppSummary(
+            Long id,
+            String name,
+            String description,
+            String launchUrl) {
+    }
 }

@@ -42,4 +42,18 @@ public interface AppRepository extends JpaRepository<App, Long> {
     @Query("SELECT CASE WHEN COUNT(a) > 0 THEN true ELSE false END " +
             "FROM App a JOIN a.roles r WHERE a.name = :appName AND r.name IN :roleNames")
     boolean hasAnyRoleAccess(@Param("appName") String appName, @Param("roleNames") Collection<String> roleNames);
+
+    /**
+     * Apps visible to a caller whose JWT carries any of the given
+     * role ids — the {@code /myApps} endpoint (auth-center) uses
+     * this to compute the post-login app launcher. Same
+     * role-id-membership shape as
+     * {@link com.co.eurekatic.common.repository.RouteRepository#findVisibleForRoles(Collection)},
+     * just over {@code role_app} instead of {@code role_route}.
+     *
+     * <p>Ordering: {@code id} ASC keeps the launcher's card order
+     * stable across requests.
+     */
+    @Query("SELECT DISTINCT a FROM App a JOIN a.roles r WHERE r.id IN :roleIds ORDER BY a.id ASC")
+    List<App> findVisibleForRoles(@Param("roleIds") Collection<Long> roleIds);
 }

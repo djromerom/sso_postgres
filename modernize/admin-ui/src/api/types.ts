@@ -424,6 +424,7 @@ export interface AppRequest {
   id?: number;
   name: string;
   description?: string | null;
+  launchUrl?: string | null;
 }
 
 /**
@@ -437,11 +438,24 @@ export interface AppResponse {
   id: number;
   name: string;
   description: string | null;
+  launchUrl: string | null;
   createdDate: string;
   roleIds: number[];
   userIds: number[];
   routeIds: number[];
   microserviceIds: number[];
+}
+
+/**
+ * One entry of {@code GET /auth/myApps} — the apps the caller's
+ * roles have a {@code role_app} binding to. Powers the post-login
+ * app launcher; see {@code AppLauncherPage}.
+ */
+export interface AppSummary {
+  id: number;
+  name: string;
+  description: string | null;
+  launchUrl: string | null;
 }
 
 /** Per-app checked-listing of roles. Mirrors

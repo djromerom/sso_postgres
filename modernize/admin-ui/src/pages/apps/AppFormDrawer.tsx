@@ -58,6 +58,7 @@ export function AppFormDrawer({ open, app, onClose, onSubmit }: Props) {
     () => ({
       name: app?.name ?? "",
       description: app?.description ?? "",
+      launchUrl: app?.launchUrl ?? "",
     }),
     [app],
   );
@@ -155,6 +156,14 @@ function GeneralTab({ app, initialValues, onSubmit, onClose }: GeneralTabProps) 
             value={values.description ?? ""}
             onChange={(e) => setField("description", e.target.value)}
             error={errors.description}
+          />
+          <div className="h-3" />
+          <Input
+            label="URL de lanzamiento"
+            value={values.launchUrl ?? ""}
+            onChange={(e) => setField("launchUrl", e.target.value)}
+            error={errors.launchUrl}
+            hint="A dónde lleva esta app tras el login — relativa (/admin/) para esta misma SPA, absoluta para una app externa"
           />
         </>
       )}

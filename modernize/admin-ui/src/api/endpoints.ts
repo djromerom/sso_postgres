@@ -14,6 +14,7 @@ import type {
   AppResponse,
   AppRoleChecked,
   AppRouteChecked,
+  AppSummary,
   AppUserChecked,
   BindUserRoleRequest,
   ContainerStatusResponse,
@@ -67,6 +68,11 @@ export const authApi = {
     apiClient.get<void>(`/sso-admin/forgotPassword?email=${encodeURIComponent(email)}`, {
       skipAuth: true,
     }),
+  // Apps the caller's roles have role_app access to — powers the
+  // post-login launcher (AppLauncherPage). Lives on auth-center,
+  // not sso-admin: it's shared, app-agnostic infrastructure, same
+  // category as login/logout.
+  myApps: () => apiClient.get<AppSummary[]>("/auth/myApps"),
 };
 
 // ====================== users ======================

@@ -265,6 +265,7 @@ public class AppService {
     private static void copy(AppRequest req, App app) {
         app.setName(req.name());
         app.setDescription(req.description());
+        app.setLaunchUrl(req.launchUrl());
     }
 
     /* ====================== checked-list records ====================== */

@@ -135,6 +135,7 @@ export const routeFormSchema = z.object({
 export const appFormSchema = z.object({
   name: z.string().min(1, "Requerido").max(255, "Máximo 255 caracteres"),
   description: z.string().max(500, "Máximo 500 caracteres").default(""),
+  launchUrl: z.string().max(500, "Máximo 500 caracteres").default(""),
 });
 
 /**

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { authApi } from "@/api/endpoints";
 import { useAuth } from "./useAuth";
 
 interface LocationState {
@@ -9,8 +10,25 @@ interface LocationState {
 /**
  * Login form. POSTs credentials to /api/auth/login; the backend
  * returns the access token in the body and sets the refresh cookie
- * in the response headers. On success we navigate to where the
- * user was trying to go, or /admin by default.
+ * in the response headers.
+ *
+ * <p>On success, where we navigate depends on why the user landed
+ * here:
+ * <ul>
+ *   <li>they were bounced here from a specific deep link (e.g. a
+ *       bookmark to {@code /admin/roles} while unauthenticated,
+ *       preserved by {@code RequireAuth} as {@code location.state.from})
+ *       — go straight there, unchanged. A deep link is a clear
+ *       enough signal of intent that it should never be
+ *       interrupted by the app picker below.</li>
+ *   <li>otherwise (a plain visit to {@code /admin/login}) — check
+ *       {@code /auth/myApps}: 2+ apps shows {@link AppLauncherPage}
+ *       so the user picks where to go; 0 or 1 (today's default)
+ *       skips straight to {@code /admin} as before. A failed
+ *       {@code myApps} call is best-effort — it falls back to
+ *       {@code /admin} rather than blocking an otherwise-successful
+ *       login.</li>
+ * </ul>
  *
  * <p>The login identifier is the user's email — the legacy
  * {@code username} column is gone since the V12 migration. The
@@ -21,22 +39,51 @@ export function LoginPage() {
   const { status, login, error, clearError } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as LocationState | null)?.from ?? "/admin";
+  const explicitFrom = (location.state as LocationState | null)?.from;
+  const from = explicitFrom ?? "/admin";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // login() dispatches LOGIN_SUCCESS (status -> "authenticated")
+  // synchronously, well before onSubmit's own post-login navigate()
+  // call below runs — without this flag the guard right below would
+  // win that race and bounce straight to `from`, cutting off the
+  // myApps() check entirely. Suppressed for the duration of our own
+  // submit-triggered login; the "already authenticated on mount"
+  // case (e.g. navigating back to /admin/login with a live session)
+  // is unaffected since this starts false and onSubmit never ran.
+  const [resolvingDestination, setResolvingDestination] = useState(false);
 
-  if (status === "authenticated") {
+  if (status === "authenticated" && !resolvingDestination) {
     return <Navigate to={from} replace />;
   }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSubmitting(true);
+    setResolvingDestination(true);
     try {
       const ok = await login(email, password);
-      if (ok) navigate(from, { replace: true });
+      if (!ok) {
+        setResolvingDestination(false);
+        return;
+      }
+      if (explicitFrom) {
+        navigate(from, { replace: true });
+        return;
+      }
+      try {
+        const apps = await authApi.myApps();
+        if (apps.length > 1) {
+          navigate("/admin/select-app", { replace: true, state: { apps } });
+        } else {
+          navigate(from, { replace: true });
+        }
+      } catch {
+        // Best-effort — never block a successful login on this.
+        navigate(from, { replace: true });
+      }
     } finally {
       setSubmitting(false);
     }
