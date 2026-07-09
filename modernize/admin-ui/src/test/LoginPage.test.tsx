@@ -62,6 +62,14 @@ describe("LoginPage", () => {
         headers: { "Content-Type": "application/json" },
       }),
     );
+    // app-access check (AuthProvider.hasAccessToThisApp) — non-empty
+    // menu means this role can use the app
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify([{ id: 1, name: "Usuarios", path: "/admin/users" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
 
     renderLogin("/login");
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
@@ -76,6 +84,36 @@ describe("LoginPage", () => {
       "/api/auth/login",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("rejects login with a clear message when the role has no access to this app", async () => {
+    fetchSpy.mockResolvedValueOnce(new Response("nope", { status: 401 })); // boot
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ token: "t", refreshToken: "r", expiresIn: 600 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ); // login succeeds — credentials were valid
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ); // empty menu — this role has no role_app binding to this app
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 204 })); // logout cleanup
+
+    renderLogin("/login");
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/Email/i), "no-access@example.com");
+    await user.type(screen.getByLabelText(/Contraseña/i), "whatever123");
+    await user.click(screen.getByRole("button", { name: /Entrar/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /no tienes permiso para acceder a esta aplicación/i,
+    );
+    expect(screen.queryByTestId("admin-landing")).not.toBeInTheDocument();
   });
 
   it("shows an error message on bad credentials", async () => {

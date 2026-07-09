@@ -8,7 +8,37 @@ import {
   type ReactNode,
 } from "react";
 import { ApiError, apiClient } from "@/api/client";
-import { authApi } from "@/api/endpoints";
+import { authApi, menuApi } from "@/api/endpoints";
+
+/**
+ * Login mints a session unconditionally (auth-center's /login
+ * doesn't know about apps — see SsoAdminAppAccessManager's
+ * javadoc for why that's deliberate: it's shared, app-agnostic
+ * infrastructure). The backend already blocks every sso-admin
+ * endpoint for a caller whose roles aren't role_app-bound to this
+ * app, but leaving it at that means a login that "succeeds" here
+ * drops the user into a dashboard where every screen 403s.
+ *
+ * <p>This check runs the same {@code /myMenu?app=<VITE_APP_NAME>}
+ * call the sidebar already uses (empty array = no role_app binding
+ * to this app — a legitimate, non-error outcome per its own docs)
+ * right after a session is minted, so a login with no access to
+ * THIS app fails fast with a clear message instead of a login that
+ * "succeeds" into a broken-looking dashboard.
+ */
+async function hasAccessToThisApp(): Promise<boolean> {
+  try {
+    const menu = await menuApi.getMyMenu();
+    return menu.length > 0;
+  } catch {
+    // Fail closed — an error here (network blip, 401 mid-check)
+    // shouldn't be read as "has access".
+    return false;
+  }
+}
+
+const NO_APP_ACCESS_MESSAGE =
+  "No tienes permiso para acceder a esta aplicación. Contacta a un administrador.";
 
 /**
  * Auth state. The access token lives in a ref (not React state) so
@@ -117,6 +147,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (resp.ok) {
           const body = (await resp.json()) as { token: string };
           accessTokenRef.current = body.token;
+          // A previously-valid session (cookie survives page
+          // reloads) could have lost its role_app binding to this
+          // app since it was minted — same check as interactive
+          // login, so a stale cookie can't bypass it.
+          if (!(await hasAccessToThisApp())) {
+            if (cancelled) return;
+            accessTokenRef.current = null;
+            try {
+              await authApi.logout();
+            } catch {
+              // ignore — best-effort cookie cleanup
+            }
+            dispatch({ type: "LOGIN_FAILURE", error: NO_APP_ACCESS_MESSAGE });
+            return;
+          }
           // We don't have a full user object on refresh yet. Use
           // a placeholder; the next /sso-admin/whoami call (or a
           // page that requires a role) will hydrate it. For now
@@ -141,6 +186,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const resp = await authApi.login({ email, password });
       accessTokenRef.current = resp.token;
+
+      // Credentials were valid and auth-center minted a session —
+      // but that alone doesn't mean this role can use THIS app.
+      // Reject here, fast and with a clear message, rather than
+      // "succeeding" into a dashboard where every screen 403s.
+      if (!(await hasAccessToThisApp())) {
+        accessTokenRef.current = null;
+        try {
+          await authApi.logout();
+        } catch {
+          // ignore — best-effort cookie cleanup
+        }
+        dispatch({ type: "LOGIN_FAILURE", error: NO_APP_ACCESS_MESSAGE });
+        return false;
+      }
+
       // Hydrate the visible identifier with the email that just
       // authenticated. Roles are fetched lazily by endpoints that
       // need them (auth-gated views).

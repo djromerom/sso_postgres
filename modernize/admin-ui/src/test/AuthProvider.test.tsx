@@ -12,6 +12,20 @@ import { useAuth } from "@/auth/useAuth";
  * lets the test drive `login()` / `logout()` against the same
  * provider instance the probe is observing.
  */
+/**
+ * A successful login/refresh is followed by a GET
+ * /sso-admin/myMenu?app=... call (AuthProvider's app-access gate —
+ * see hasAccessToThisApp). Queue this response right after the
+ * login/refresh mock to let that check pass; queue an empty-array
+ * response to simulate a role with no role_app binding to this app.
+ */
+function menuResponse(hasAccess: boolean) {
+  return new Response(JSON.stringify(hasAccess ? [{ id: 1 }] : []), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 describe("AuthProvider", () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
@@ -93,16 +107,35 @@ describe("AuthProvider", () => {
   });
 
   it("hydrates to authenticated when the silent refresh succeeds", async () => {
-    fetchSpy.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({ token: "abc", refreshToken: "r", expiresIn: 600 }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: "abc", refreshToken: "r", expiresIn: 600 }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(menuResponse(true));
 
     const { snapshot } = mount();
     await waitFor(() => expect(snapshot().status).toBe("authenticated"));
     expect(snapshot().token).toBe("abc");
+  });
+
+  it("logs out a stale session whose role lost access to this app", async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: "abc", refreshToken: "r", expiresIn: 600 }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(menuResponse(false))
+      .mockResolvedValueOnce(new Response(null, { status: 204 })); // logout cleanup
+
+    const { snapshot } = mount();
+    await waitFor(() => expect(snapshot().status).toBe("unauthenticated"));
+    expect(snapshot().token).toBe("");
+    expect(snapshot().error).toMatch(/no tienes permiso/i);
   });
 
   it("login() flips to authenticated and stores the token", async () => {
@@ -113,7 +146,8 @@ describe("AuthProvider", () => {
           JSON.stringify({ token: "login-tok", refreshToken: "r", expiresIn: 600 }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
-      );
+      )
+      .mockResolvedValueOnce(menuResponse(true));
 
     const { harness, snapshot, waitForStatus } = mount();
     await waitForStatus("unauthenticated");
@@ -126,6 +160,31 @@ describe("AuthProvider", () => {
     await waitForStatus("authenticated");
     expect(snapshot().token).toBe("login-tok");
     expect(snapshot().email).toBe("admin");
+  });
+
+  it("login() rejects a role with no role_app binding to this app", async () => {
+    fetchSpy
+      .mockResolvedValueOnce(new Response("nope", { status: 401 })) // boot
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: "login-tok", refreshToken: "r", expiresIn: 600 }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(menuResponse(false)) // empty menu = no access
+      .mockResolvedValueOnce(new Response(null, { status: 204 })); // logout cleanup
+
+    const { harness, snapshot, waitForStatus } = mount();
+    await waitForStatus("unauthenticated");
+
+    let ok = true;
+    await act(async () => {
+      ok = await harness.login("no-access@example.com", "pw");
+    });
+    expect(ok).toBe(false);
+    expect(snapshot().status).toBe("unauthenticated");
+    expect(snapshot().token).toBe("");
+    expect(snapshot().error).toMatch(/no tienes permiso/i);
   });
 
   it("login() surfaces the server error and stays unauthenticated", async () => {
@@ -163,6 +222,7 @@ describe("AuthProvider", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       ) // login
+      .mockResolvedValueOnce(menuResponse(true)) // app-access check
       .mockResolvedValueOnce(new Response(null, { status: 204 })); // logout
 
     const { harness, snapshot, waitForStatus } = mount();
