@@ -87,11 +87,6 @@ describe("ActivatePage", () => {
   });
 
   it("POSTs {token, password} to /sso-admin/activateAccount and shows the success view", async () => {
-    // The apiClient parses any 2xx-non-204 body as JSON; an empty
-    // body would throw inside handleResponse. The endpoint itself
-    // returns no payload, but a "{}" body satisfies the parser
-    // and matches the wire in practice (most non-REST controllers
-    // serialise Void to {}).
     fetchSpy.mockResolvedValueOnce(
       new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
     );
@@ -122,6 +117,29 @@ describe("ActivatePage", () => {
     // activation endpoint (a session-less user is clicking from
     // their email).
     expect(init.headers).not.toHaveProperty("Authorization");
+
+    expect(
+      await screen.findByText(/Tu cuenta ha sido activada/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the success view when the backend returns 200 with an empty body", async () => {
+    // Regression test: activateAccount's actual controller method
+    // returns `ResponseEntity.ok().build()` — 200 with a truly
+    // empty body (Content-Length: 0), not "{}". apiClient's
+    // handleResponse used to call resp.json() unconditionally on
+    // any non-204 2xx, which throws "Unexpected end of JSON
+    // input" on an empty string — the activation form would land
+    // on the error view even though the account activated fine.
+    fetchSpy.mockResolvedValueOnce(new Response("", { status: 200 }));
+    renderActivate("/admin/activate?token=abc123");
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Contraseña"), "newpass1");
+    await user.type(screen.getByLabelText("Repetir contraseña"), "newpass1");
+    await user.click(
+      screen.getByRole("button", { name: /Activar cuenta/i }),
+    );
 
     expect(
       await screen.findByText(/Tu cuenta ha sido activada/i),
