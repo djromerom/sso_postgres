@@ -49,7 +49,7 @@ public class EmailSender implements NotificationSender {
                 log.warn("Email provider '{}' failed: {}", rp.providerKey(), pe.getMessage());
                 last = pe;
             } catch (RuntimeException ex) {
-                log.warn("Email provider '{}' threw: {}", rp.providerKey(), ex.toString());
+                log.warn("Email provider '{}' threw", rp.providerKey(), ex);
                 last = new ProviderException("Provider " + rp.providerKey() + " failed", ex);
             }
         }
