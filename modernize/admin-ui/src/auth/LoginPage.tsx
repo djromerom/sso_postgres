@@ -21,7 +21,12 @@ interface LocationState {
  *       — go straight there, unchanged. A deep link is a clear
  *       enough signal of intent that it should never be
  *       interrupted by the app picker below.</li>
- *   <li>otherwise (a plain visit to {@code /admin/login}) — check
+ *   <li>otherwise (a plain visit to {@code /admin/login}, OR the
+ *       generic unauthenticated-entry bounce to bare {@code /admin}
+ *       — {@code RequireAuth} sets {@code state.from} to whatever
+ *       path it intercepted, and for a first-time visit that's
+ *       always {@code /admin} itself, not a real deep link; treated
+ *       the same as no {@code from} at all) — check
  *       {@code /auth/myApps}: 2+ apps shows {@link AppLauncherPage}
  *       so the user picks where to go; 0 or 1 (today's default)
  *       skips straight to {@code /admin} as before. A failed
@@ -39,8 +44,14 @@ export function LoginPage() {
   const { status, login, error, clearError } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const explicitFrom = (location.state as LocationState | null)?.from;
-  const from = explicitFrom ?? "/admin";
+  const rawFrom = (location.state as LocationState | null)?.from;
+  // "/admin" isn't a real deep link — it's what RequireAuth records
+  // for the generic entry bounce (visiting "/", bare "/admin", or
+  // anything that redirects there before auth is known). Only a
+  // MORE SPECIFIC path counts as an explicit destination worth
+  // skipping the app picker for.
+  const explicitFrom = rawFrom && rawFrom !== "/admin" ? rawFrom : undefined;
+  const from = rawFrom ?? "/admin";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

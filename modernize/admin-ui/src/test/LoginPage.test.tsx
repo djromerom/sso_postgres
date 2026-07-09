@@ -163,6 +163,48 @@ describe("LoginPage", () => {
     );
   });
 
+  it("still shows the picker when RequireAuth's from is the generic /admin bounce, not a real deep link", async () => {
+    // This is the realistic path: a fresh, unauthenticated visit to
+    // "/" or bare "/admin" makes RequireAuth redirect to login with
+    // state.from = "/admin" (location.pathname at intercept time) —
+    // that's NOT a deep link, just the default entry, and must not
+    // be treated as one (regression: it used to skip the picker
+    // for every normal login, not just real deep links).
+    fetchSpy.mockResolvedValueOnce(new Response("nope", { status: 401 })); // boot
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ token: "t", refreshToken: "r", expiresIn: 600 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ); // login succeeds
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify([{ id: 1, name: "Usuarios", path: "/admin/users" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ); // hasAccessToThisApp — non-empty menu
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([
+          { id: 1, name: "SSO-ADMIN", description: "Consola", launchUrl: "/admin/" },
+          { id: 2, name: "COLOMBIA-EVALUADORA", description: "CE", launchUrl: "https://x" },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    ); // myApps — 2 apps
+
+    renderLogin({ pathname: "/admin/login", state: { from: "/admin" } });
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/Email/i), "admin@example.com");
+    await user.type(screen.getByLabelText(/Contraseña/i), "ChangeMe-Now-123");
+    await user.click(screen.getByRole("button", { name: /Entrar/i }));
+
+    expect(await screen.findByTestId("select-app-landing")).toBeInTheDocument();
+    expect(screen.queryByTestId("admin-landing")).not.toBeInTheDocument();
+  });
+
   it("skips the picker and honors an explicit deep link, even with 2+ apps", async () => {
     fetchSpy.mockResolvedValueOnce(new Response("nope", { status: 401 })); // boot
     fetchSpy.mockResolvedValueOnce(
