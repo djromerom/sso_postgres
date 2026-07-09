@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { authApi } from "@/api/endpoints";
 
 /**
@@ -50,12 +51,12 @@ export function ForgotPasswordPage() {
             Si <strong>{email}</strong> está registrado, te enviamos un
             correo con un enlace para restaurar tu contraseña.
           </p>
-          <a
-            href="/login"
+          <Link
+            to="/login"
             className="mt-4 inline-block rounded bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700"
           >
             Volver a iniciar sesión
-          </a>
+          </Link>
         </div>
       </main>
     );
@@ -97,12 +98,12 @@ export function ForgotPasswordPage() {
           {submitting ? "Enviando…" : "Enviar enlace"}
         </button>
 
-        <a
-          href="/login"
+        <Link
+          to="/login"
           className="mt-4 block text-center text-sm text-sky-600 hover:underline"
         >
           Volver a iniciar sesión
-        </a>
+        </Link>
       </form>
     </main>
   );

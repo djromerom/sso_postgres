@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "./useAuth";
 
 interface LocationState {
@@ -95,12 +95,12 @@ export function LoginPage() {
           {submitting ? "Entrando…" : "Entrar"}
         </button>
 
-        <a
-          href="/forgot-password"
+        <Link
+          to="/forgot-password"
           className="mt-4 block text-center text-sm text-sky-600 hover:underline"
         >
           ¿Olvidaste tu contraseña?
-        </a>
+        </Link>
       </form>
     </main>
   );
