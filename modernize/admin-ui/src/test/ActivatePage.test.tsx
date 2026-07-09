@@ -87,13 +87,12 @@ describe("ActivatePage", () => {
   });
 
   it("POSTs {token, password} to /sso-admin/activateAccount and shows the success view", async () => {
-    // The apiClient parses any 2xx-non-204 body as JSON; an empty
-    // body would throw inside handleResponse. The endpoint itself
-    // returns no payload, but a "{}" body satisfies the parser
-    // and matches the wire in practice (most non-REST controllers
-    // serialise Void to {}).
+    // The controller returns ResponseEntity.ok().build() — a
+    // genuinely empty 200 body, not "{}". handleResponse must
+    // treat that as "no content" rather than calling resp.json()
+    // on it (which throws "Unexpected end of JSON input").
     fetchSpy.mockResolvedValueOnce(
-      new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
+      new Response("", { status: 200, headers: { "Content-Type": "application/json" } }),
     );
     renderActivate("/admin/activate?token=abc123");
 

@@ -124,11 +124,16 @@ export class ApiClient {
 
   private async handleResponse<T>(resp: Response): Promise<T> {
     if (resp.ok) {
-      // Some endpoints (delete, logout) return 204 with no body.
-      if (resp.status === 204) {
+      // Some endpoints return no body — 204 always, but also a
+      // few 200s (e.g. activateAccount/restorePassword's
+      // ResponseEntity.ok().build()). resp.json() throws
+      // "Unexpected end of JSON input" on a truly empty body, so
+      // check the text first rather than trusting the status code.
+      const text = await resp.text();
+      if (text.length === 0) {
         return undefined as T;
       }
-      return (await resp.json()) as T;
+      return JSON.parse(text) as T;
     }
     let payload: ErrorResponse | null = null;
     try {
