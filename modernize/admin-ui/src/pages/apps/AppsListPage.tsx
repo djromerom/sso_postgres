@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { Table, type Column } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import {
@@ -50,6 +51,17 @@ export function AppsListPage() {
   const [editing, setEditing] = useState<AppResponse | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<AppResponse | null>(null);
+  const [search, setSearch] = useState("");
+
+  const filteredApps = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return apps.data ?? [];
+    return (apps.data ?? []).filter(
+      (a) =>
+        a.name.toLowerCase().includes(q) ||
+        (a.description ?? "").toLowerCase().includes(q),
+    );
+  }, [apps.data, search]);
 
   async function handleSubmit(values: AppFormValues & { id?: number }) {
     if (values.id) {
@@ -170,15 +182,21 @@ export function AppsListPage() {
         </Button>
       </header>
 
+      <div className="mb-3">
+        <SearchInput value={search} onChange={setSearch} placeholder="Buscar app…" />
+      </div>
+
       <Table
         columns={columns}
-        rows={apps.data ?? []}
+        rows={filteredApps}
         rowKey={(a) => a.id}
         loading={apps.isLoading}
         empty={
           apps.isError
             ? "No se pudo cargar la lista. ¿sso-admin está UP?"
-            : "Aún no hay apps."
+            : search
+              ? "Sin resultados."
+              : "Aún no hay apps."
         }
       />
 

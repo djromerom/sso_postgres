@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { Table, type Column } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import {
@@ -22,6 +23,7 @@ export function RoutesListPage() {
   const [editing, setEditing] = useState<RouteResponse | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<RouteResponse | null>(null);
+  const [search, setSearch] = useState("");
 
   async function handleSubmit(values: RouteFormValues & { id?: number }) {
     if (values.id) {
@@ -57,11 +59,19 @@ export function RoutesListPage() {
     setDeleting(null);
   }
 
-  const rows = (routes.data ?? []).slice().sort((a, b) => {
+  const sortedRoutes = (routes.data ?? []).slice().sort((a, b) => {
     if (a.idParent == null && b.idParent != null) return -1;
     if (a.idParent != null && b.idParent == null) return 1;
     return a.menuOrder - b.menuOrder;
   });
+
+  const filteredRoutes = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return sortedRoutes;
+    return sortedRoutes.filter(
+      (r) => r.name.toLowerCase().includes(q) || r.path.toLowerCase().includes(q),
+    );
+  }, [sortedRoutes, search]);
 
   const columns: Column<RouteResponse>[] = [
     { key: "name", header: "Nombre", render: (r) => r.name },
@@ -117,12 +127,15 @@ export function RoutesListPage() {
           + Nueva ruta
         </Button>
       </header>
+      <div className="mb-3">
+        <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nombre o path…" />
+      </div>
       <Table
         columns={columns}
-        rows={rows}
+        rows={filteredRoutes}
         rowKey={(r) => r.id}
         loading={routes.isLoading}
-        empty="Aún no hay rutas."
+        empty={search ? "Sin resultados." : "Aún no hay rutas."}
       />
       <RouteFormDrawer
         open={creating || editing !== null}

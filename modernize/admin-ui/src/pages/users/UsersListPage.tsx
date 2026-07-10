@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { Table, type Column } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import {
@@ -36,6 +37,16 @@ export function UsersListPage() {
   const toast = useToast();
   const [editing, setEditing] = useState<UserResponse | null>(null);
   const [creating, setCreating] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return users.data ?? [];
+    return (users.data ?? []).filter(
+      (u) =>
+        u.email.toLowerCase().includes(q) || u.fullName.toLowerCase().includes(q),
+    );
+  }, [users.data, search]);
 
   async function handleResendActivation(u: UserResponse) {
     await resendActivation.mutateAsync(u.id);
@@ -144,12 +155,16 @@ export function UsersListPage() {
         <Button onClick={() => setCreating(true)}>+ Nuevo usuario</Button>
       </header>
 
+      <div className="mb-3">
+        <SearchInput value={search} onChange={setSearch} placeholder="Buscar por email o nombre…" />
+      </div>
+
       <Table
         columns={columns}
-        rows={users.data ?? []}
+        rows={filteredUsers}
         rowKey={(u) => u.id}
         loading={users.isLoading}
-        empty="Aún no hay usuarios."
+        empty={search ? "Sin resultados." : "Aún no hay usuarios."}
       />
 
       <UserFormDrawer

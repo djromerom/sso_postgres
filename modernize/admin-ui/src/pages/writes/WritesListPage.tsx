@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { Table, type Column } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import {
@@ -63,6 +64,18 @@ export function WritesListPage() {
   const [deleting, setDeleting] = useState<WriteDefinitionResponse | null>(
     null,
   );
+  const [search, setSearch] = useState("");
+
+  const filteredWrites = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return writes.data ?? [];
+    return (writes.data ?? []).filter(
+      (w) =>
+        w.uuid.toLowerCase().includes(q) ||
+        w.writeType.toLowerCase().includes(q) ||
+        w.tableName.toLowerCase().includes(q),
+    );
+  }, [writes.data, search]);
 
   // Lookup table for the Microservicio column. Maps the FK
   // id → {instanceName, dialect} once per fetch so the row
@@ -245,15 +258,25 @@ export function WritesListPage() {
         </Button>
       </header>
 
+      <div className="mb-3">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Buscar por UUID, tipo o tabla…"
+        />
+      </div>
+
       <Table
         columns={columns}
-        rows={writes.data ?? []}
+        rows={filteredWrites}
         rowKey={(w) => w.id}
         loading={writes.isLoading}
         empty={
           writes.isError
             ? "No se pudo cargar la lista. ¿sso-admin está UP?"
-            : "Aún no hay writes."
+            : search
+              ? "Sin resultados."
+              : "Aún no hay writes."
         }
       />
 

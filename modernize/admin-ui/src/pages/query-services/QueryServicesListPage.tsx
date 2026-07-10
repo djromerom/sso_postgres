@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Table, type Column } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
@@ -40,6 +41,7 @@ export function QueryServicesListPage() {
   const restart = useRestartQueryService();
   const toast = useToast();
   const [logsFor, setLogsFor] = useState<MicroserviceResponse | null>(null);
+  const [search, setSearch] = useState("");
 
   const columns = useMemo<Column<MicroserviceResponse>[]>(
     () => [
@@ -131,6 +133,16 @@ export function QueryServicesListPage() {
     () => true,
   ).length;
 
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter(
+      (m) =>
+        (m.instanceName ?? m.serviceId).toLowerCase().includes(q) ||
+        (m.dialect ?? "").toLowerCase().includes(q),
+    );
+  }, [rows, search]);
+
   return (
     <section>
       <header className="mb-4 flex items-center justify-between gap-4">
@@ -144,15 +156,25 @@ export function QueryServicesListPage() {
         <Legend />
       </header>
 
+      <div className="mb-3">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Buscar por instancia o dialecto…"
+        />
+      </div>
+
       <Table
         columns={columns}
-        rows={rows}
+        rows={filteredRows}
         rowKey={(m) => m.id}
         loading={services.isLoading}
         empty={
           services.isError
             ? "No se pudo cargar la lista de microservicios. ¿sso-admin está UP?"
-            : "Aún no hay microservicios QUERY. Crea uno desde Microservicios."
+            : search
+              ? "Sin resultados."
+              : "Aún no hay microservicios QUERY. Crea uno desde Microservicios."
         }
       />
 

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { Table, type Column } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import {
@@ -22,6 +23,18 @@ export function EndpointsListPage() {
   const [editing, setEditing] = useState<EndpointResponse | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<EndpointResponse | null>(null);
+  const [search, setSearch] = useState("");
+
+  const filteredEndpoints = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return endpoints.data ?? [];
+    return (endpoints.data ?? []).filter(
+      (e) =>
+        e.method.toLowerCase().includes(q) ||
+        e.path.toLowerCase().includes(q) ||
+        (e.description ?? "").toLowerCase().includes(q),
+    );
+  }, [endpoints.data, search]);
 
   async function handleSubmit(values: EndpointFormValues & { id?: number }) {
     if (values.id) {
@@ -112,12 +125,19 @@ export function EndpointsListPage() {
         <h1 className="text-xl font-semibold text-slate-900">Endpoints</h1>
         <Button onClick={() => setCreating(true)}>+ Nuevo endpoint</Button>
       </header>
+      <div className="mb-3">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Buscar por método, path o descripción…"
+        />
+      </div>
       <Table
         columns={columns}
-        rows={endpoints.data ?? []}
+        rows={filteredEndpoints}
         rowKey={(e) => e.id}
         loading={endpoints.isLoading}
-        empty="Aún no hay endpoints."
+        empty={search ? "Sin resultados." : "Aún no hay endpoints."}
       />
       <EndpointFormDrawer
         open={creating || editing !== null}

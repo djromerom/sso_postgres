@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import { Input } from "@/components/ui/Input";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { Table, type Column } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import { useMicroservices } from "@/hooks/useMicroservices";
@@ -48,6 +49,7 @@ export function QueriesCatalogPage() {
   const services = useMicroservices();
   const [selectedMicroserviceId, setSelectedMicroserviceId] = useState<string>("");
   const [drawerQuery, setDrawerQuery] = useState<QueryDefinition | null>(null);
+  const [search, setSearch] = useState("");
 
   // null = "all instances", number = "this microservice only".
   // undefined means "user hasn't chosen yet" — we still want a
@@ -60,6 +62,16 @@ export function QueriesCatalogPage() {
         : null;
 
   const queries = useQueriesForInstance(microserviceFilter);
+
+  const filteredQueries = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return queries.data ?? [];
+    return (queries.data ?? []).filter(
+      (query) =>
+        query.uuid.toLowerCase().includes(q) ||
+        (query.type ?? "").toLowerCase().includes(q),
+    );
+  }, [queries.data, search]);
 
   const queryInstances = useMemo(
     () =>
@@ -154,15 +166,25 @@ export function QueriesCatalogPage() {
         ) : null}
       </div>
 
+      <div className="mb-3">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Buscar por UUID o tipo…"
+        />
+      </div>
+
       <Table
         columns={columns}
-        rows={queries.data ?? []}
+        rows={filteredQueries}
         rowKey={(q) => q.idQuery}
         loading={queries.isLoading}
         empty={
           queries.isError
             ? "No se pudo cargar el catálogo. ¿sso-admin está UP?"
-            : "No hay consultas visibles para esta instancia."
+            : search
+              ? "Sin resultados."
+              : "No hay consultas visibles para esta instancia."
         }
       />
 

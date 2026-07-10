@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { Table, type Column } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import { useCreateGroup, useGroups, useUpdateGroup } from "@/hooks/useGroups";
@@ -14,6 +15,17 @@ export function GroupsListPage() {
   const toast = useToast();
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<GroupResponse | null>(null);
+  const [search, setSearch] = useState("");
+
+  const filteredGroups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return groups.data ?? [];
+    return (groups.data ?? []).filter(
+      (g) =>
+        g.name.toLowerCase().includes(q) ||
+        (g.description ?? "").toLowerCase().includes(q),
+    );
+  }, [groups.data, search]);
 
   function closeDrawer() {
     setCreating(false);
@@ -58,12 +70,15 @@ export function GroupsListPage() {
         <h1 className="text-xl font-semibold text-slate-900">Grupos</h1>
         <Button onClick={() => setCreating(true)}>+ Nuevo grupo</Button>
       </header>
+      <div className="mb-3">
+        <SearchInput value={search} onChange={setSearch} placeholder="Buscar grupo…" />
+      </div>
       <Table
         columns={columns}
-        rows={groups.data ?? []}
+        rows={filteredGroups}
         rowKey={(g) => g.id}
         loading={groups.isLoading}
-        empty="Aún no hay grupos."
+        empty={search ? "Sin resultados." : "Aún no hay grupos."}
       />
       <GroupFormDrawer
         open={creating || editing !== null}

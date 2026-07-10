@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { Table, type Column } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import { useCreateRole, useRoles, useUpdateRole } from "@/hooks/useRoles";
@@ -14,6 +15,17 @@ export function RolesListPage() {
   const toast = useToast();
   const [editing, setEditing] = useState<RoleResponse | null>(null);
   const [creating, setCreating] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const filteredRoles = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return roles.data ?? [];
+    return (roles.data ?? []).filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        (r.description ?? "").toLowerCase().includes(q),
+    );
+  }, [roles.data, search]);
 
   async function handleSubmit(values: RoleFormValues & { id?: number }) {
     if (values.id) {
@@ -55,12 +67,15 @@ export function RolesListPage() {
         <h1 className="text-xl font-semibold text-slate-900">Roles</h1>
         <Button onClick={() => setCreating(true)}>+ Nuevo rol</Button>
       </header>
+      <div className="mb-3">
+        <SearchInput value={search} onChange={setSearch} placeholder="Buscar rol…" />
+      </div>
       <Table
         columns={columns}
-        rows={roles.data ?? []}
+        rows={filteredRoles}
         rowKey={(r) => r.id}
         loading={roles.isLoading}
-        empty="Aún no hay roles."
+        empty={search ? "Sin resultados." : "Aún no hay roles."}
       />
       <RoleFormDrawer
         open={creating || editing !== null}

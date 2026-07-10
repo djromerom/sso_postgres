@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { Table, type Column } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import {
@@ -59,6 +60,17 @@ export function QueriesAdminPage() {
   const [deleting, setDeleting] = useState<QueryAdminResponse | null>(null);
   const [bindingRolesFor, setBindingRolesFor] =
     useState<QueryAdminResponse | null>(null);
+  const [search, setSearch] = useState("");
+
+  const filteredQueries = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return queries.data ?? [];
+    return (queries.data ?? []).filter(
+      (query) =>
+        query.uuid.toLowerCase().includes(q) ||
+        (query.type ?? "").toLowerCase().includes(q),
+    );
+  }, [queries.data, search]);
 
   async function handleSubmit(values: QueryFormValues & { id?: number }) {
     const body = {
@@ -204,15 +216,25 @@ export function QueriesAdminPage() {
         </Button>
       </header>
 
+      <div className="mb-3">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Buscar por UUID o tipo…"
+        />
+      </div>
+
       <Table
         columns={columns}
-        rows={queries.data ?? []}
+        rows={filteredQueries}
         rowKey={(q) => q.id}
         loading={queries.isLoading}
         empty={
           queries.isError
             ? "No se pudo cargar el catálogo. ¿sso-admin está UP?"
-            : "Aún no hay queries."
+            : search
+              ? "Sin resultados."
+              : "Aún no hay queries."
         }
       />
 
