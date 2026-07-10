@@ -271,6 +271,55 @@ class SsoAdminIntegrationTest {
                 .expectStatus().isForbidden();
     }
 
+    /**
+     * ADMIN has NO bypass on {@code role_endpoint} — a deliberate
+     * choice (see {@code SsoAdminAccessManager}'s Javadoc) so the
+     * per-endpoint toggle on the Endpoints admin screen never
+     * silently no-ops for ADMIN. Proven directly here rather than
+     * relying on V15's seed data, since this test's fresh H2 DB
+     * never runs Flyway.
+     */
+    @Test
+    void adminRoleAlsoRequiresRoleEndpointBinding() {
+        Role admin = roleRepository.findByName("ADMIN").orElseThrow();
+
+        App app = new App();
+        app.setName("SSO-ADMIN");
+        app.setDescription("SSO Admin console");
+        app.addRole(admin);
+        appRepository.save(app);
+
+        String token = tokenFor("root@example.com", "ADMIN");
+
+        // role_app alone isn't enough for ADMIN either, same as
+        // any other role.
+        client.get().uri("/getUsers")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .exchange()
+                .expectStatus().isForbidden();
+
+        Endpoint endpoint = new Endpoint();
+        endpoint.setMethod("GET");
+        endpoint.setPath("/getUsers");
+        endpoint.setDescription("Listar usuarios");
+        endpoint.setNumberParams(0);
+        endpoint.addRole(admin);
+        endpointRepository.save(endpoint);
+
+        client.get().uri("/getUsers")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .exchange()
+                .expectStatus().isOk();
+
+        // A different, unbound endpoint still 403s ADMIN too.
+        client.put().uri("/updateAccount")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("id", 1, "fullName", "X"))
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
     /* ====================== auth-gated CRUD ====================== */
 
     @Test

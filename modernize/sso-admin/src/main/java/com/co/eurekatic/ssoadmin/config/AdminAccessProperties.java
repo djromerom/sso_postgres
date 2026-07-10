@@ -12,12 +12,14 @@ import java.time.Duration;
  *                           V10 migration) that identifies THIS
  *                           console. {@link com.co.eurekatic.ssoadmin.config.SsoAdminAccessManager}
  *                           requires the caller to have a role bound
- *                           (role_app) to this app — ADMIN included,
- *                           no bypass. Past that gate, ADMIN reaches
- *                           everything; any other role additionally
- *                           needs a role_endpoint match. Distinct
- *                           from {@code sso.email.app-name} (branding
- *                           text for outgoing emails).
+ *                           (role_app) to this app AND a matching
+ *                           role_endpoint binding — ADMIN included,
+ *                           no bypass on either check (V15 seeds
+ *                           ADMIN with everything, but unbinding a
+ *                           specific endpoint from it genuinely
+ *                           revokes it). Distinct from {@code
+ *                           sso.email.app-name} (branding text for
+ *                           outgoing emails).
  * @param appAccessCacheTtl  TTL for the app-access cache
  *                           ({@link com.co.eurekatic.ssoadmin.service.AppAccessService}).
  *                           A safety net for out-of-band DB edits —

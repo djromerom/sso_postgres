@@ -25,17 +25,21 @@ import java.util.List;
  * Spring Security 6 configuration for sso-admin.
  *
  * <p>Authorization model: every business endpoint requires the
- * caller's roles to have a {@code role_app} binding to this
- * console's app ({@code sso.admin.app-name}) — no bypass, not even
- * for ADMIN. Past that gate: ADMIN reaches everything
- * unconditionally; any other role needs a {@code role_endpoint}
- * binding matching the specific request (see
- * {@link SsoAdminAccessManager}). Before this, {@code role_app}
- * only controlled what {@code /myMenu} showed in the sidebar, and
- * only {@code ROLE_ADMIN} could reach anything here at all —
- * non-ADMIN roles were 100% blocked from sso-admin regardless of
- * any binding. Everyone else (no app access, or no matching
- * endpoint binding) gets 403.
+ * caller's roles to have BOTH a {@code role_app} binding to this
+ * console's app ({@code sso.admin.app-name}) AND a {@code
+ * role_endpoint} binding matching the specific request — no
+ * bypass, not even for ADMIN (see {@link SsoAdminAccessManager}).
+ * The V15 migration seeds ADMIN with every endpoint that existed
+ * at seed time, so this is a no-op out of the box, but unbinding a
+ * specific endpoint from ADMIN via the Endpoints admin screen now
+ * genuinely revokes it — deliberately, so the per-endpoint toggle
+ * isn't silently inert for the one role most likely to be testing
+ * it. Before this class existed at all, {@code role_app} only
+ * controlled what {@code /myMenu} showed in the sidebar, and only
+ * {@code ROLE_ADMIN} could reach anything here — non-ADMIN roles
+ * were 100% blocked regardless of any binding. Everyone (ADMIN
+ * included) gets 403 on missing app access or a missing endpoint
+ * binding.
  *
  * <p>Public endpoints:
  * <ul>
@@ -133,9 +137,9 @@ public class SecurityConfig {
                         // intersection), same as /getQuery.
                         .requestMatchers("/getQuery", "/getWrite", "/myQueries", "/myMenu").authenticated()
                         // Everything else requires a role_app binding
-                        // to this app, then either ADMIN (unconditional)
-                        // or a matching role_endpoint binding — see
-                        // SsoAdminAccessManager. Was bare
+                        // to this app AND a matching role_endpoint
+                        // binding — see SsoAdminAccessManager. No
+                        // bypass for ADMIN on either check. Was bare
                         // hasRole("ADMIN"); that let any ADMIN-named
                         // role into every endpoint here regardless
                         // of whether it was ever scoped to this app,
