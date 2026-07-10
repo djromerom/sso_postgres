@@ -111,6 +111,47 @@ describe("RoutesListPage", () => {
     expect(screen.getByText("/admin/users")).toBeInTheDocument();
   });
 
+  it("search box filters rows by name or path (case-insensitive), clear restores the list", async () => {
+    const spy = buildFetchSpy({
+      routes: [
+        mkRoute({ id: 1, name: "Usuarios", path: "/admin/users" }),
+        mkRoute({ id: 2, name: "Roles", path: "/admin/roles" }),
+        mkRoute({ id: 3, name: "Grupos", path: "/admin/groups" }),
+      ],
+    });
+    vi.stubGlobal("fetch", spy);
+
+    renderPage();
+    await screen.findByText("Usuarios");
+    expect(screen.getByText("Roles")).toBeInTheDocument();
+    expect(screen.getByText("Grupos")).toBeInTheDocument();
+
+    const search = screen.getByTestId("search-input");
+
+    // Match by name, case-insensitive.
+    await userEvent.type(search, "rol");
+    expect(screen.getByText("Roles")).toBeInTheDocument();
+    expect(screen.queryByText("Usuarios")).not.toBeInTheDocument();
+    expect(screen.queryByText("Grupos")).not.toBeInTheDocument();
+
+    // Match by path instead of name.
+    await userEvent.clear(search);
+    await userEvent.type(search, "/admin/groups");
+    expect(screen.getByText("Grupos")).toBeInTheDocument();
+    expect(screen.queryByText("Roles")).not.toBeInTheDocument();
+
+    // No match -> empty state, not the "no rows at all" message.
+    await userEvent.clear(search);
+    await userEvent.type(search, "nonexistent");
+    expect(await screen.findByText("Sin resultados.")).toBeInTheDocument();
+
+    // Clear button restores the full list.
+    await userEvent.click(screen.getByLabelText(/Limpiar búsqueda/i));
+    expect(await screen.findByText("Usuarios")).toBeInTheDocument();
+    expect(screen.getByText("Roles")).toBeInTheDocument();
+    expect(screen.getByText("Grupos")).toBeInTheDocument();
+  });
+
   it("binding tab is disabled (with hint) in create mode", async () => {
     const spy = buildFetchSpy({ routes: [] });
     vi.stubGlobal("fetch", spy);
