@@ -72,7 +72,7 @@ public class SecurityConfig {
                         // require an API key here because every other
                         // route does its own JWT check anyway.
                         .requestMatchers("/actuator/health", "/actuator/health/**",
-                                "/actuator/info", "/actuator/prometheus").permitAll()
+                                "/actuator/info").permitAll()
                         // Public service: per-query authorization
                         // is the publicEnd flag, not a Spring
                         // Security rule. 403 for non-public uuids

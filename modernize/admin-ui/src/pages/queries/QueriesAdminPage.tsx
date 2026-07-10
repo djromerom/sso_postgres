@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { Drawer } from "@/components/ui/Drawer";
+import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Table, type Column } from "@/components/ui/Table";
@@ -14,23 +16,31 @@ import {
   useUnbindQueryRole,
   useUpdateQuery,
 } from "@/hooks/useAdminQueries";
+import { useExecuteQuery } from "@/hooks/useQueries";
 import { useMicroservices } from "@/hooks/useMicroservices";
-import type { QueryAdminResponse } from "@/api/types";
+import type {
+  QueryAdminResponse,
+  QueryExecutionResponse,
+  QueryParamValue,
+} from "@/api/types";
+import { extractQueryParams } from "@/lib/queryParams";
 import { QueryFormDrawer } from "./QueryFormDrawer";
 import type { QueryFormValues } from "@/schemas";
 
 /**
- * Admin CRUD for the queries catalog. Mirrors the layout of
- * {@code EndpointsListPage}: list + create/edit drawer +
- * confirm-delete modal + a separate roles-binding modal.
+ * The queries catalog: a single admin surface that both MANAGES
+ * queries (create/edit/delete + role bindings) and EXECUTES them
+ * (the "Ejecutar" action per row). Previously split across two
+ * near-identical pages ({@code QueriesCatalogPage} at
+ * {@code /admin/queries}, which only executed, and this admin
+ * page, which only managed); they were merged because the admin
+ * DTO ({@link QueryAdminResponse}) already carries everything the
+ * executor needs (the SQL, uuid, and microserviceId). The old
+ * {@code /admin/queries} path now redirects here.
  *
- * <p>Distinct from {@code QueriesCatalogPage} (the
- * consumer-facing execution page at {@code /admin/queries}):
- * this page manages the rows; the catalog page reads + executes
- * them. The two share the
- * {@code useInvalidateQueryAdminAndCatalog} hook so a role
- * binding here refreshes the consumer catalog too (per-row
- * auth changes visibility of queries for non-admin callers).
+ * <p>Layout mirrors {@code EndpointsListPage}: list + create/edit
+ * drawer + confirm-delete modal + a separate roles-binding modal,
+ * plus the execute drawer opened by the row's "Ejecutar" button.
  *
  * <p>Two layout tricks worth flagging:
  * <ul>
@@ -60,6 +70,7 @@ export function QueriesAdminPage() {
   const [deleting, setDeleting] = useState<QueryAdminResponse | null>(null);
   const [bindingRolesFor, setBindingRolesFor] =
     useState<QueryAdminResponse | null>(null);
+  const [executing, setExecuting] = useState<QueryAdminResponse | null>(null);
   const [search, setSearch] = useState("");
 
   const filteredQueries = useMemo(() => {
@@ -172,6 +183,14 @@ export function QueriesAdminPage() {
           <Button
             size="sm"
             variant="secondary"
+            onClick={() => setExecuting(q)}
+            data-testid={`execute-${q.id}`}
+          >
+            Ejecutar
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
             onClick={() => setBindingRolesFor(q)}
             data-testid={`bind-roles-${q.id}`}
           >
@@ -203,12 +222,10 @@ export function QueriesAdminPage() {
       <header className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">
-            Queries Catalog (admin)
+            Queries Catalog
           </h1>
           <p className="mt-0.5 text-xs text-slate-500">
-            Crea y vincula queries a microservicios QUERY. La página
-            <code className="mx-1">Queries Catalog</code>es la cara de
-            consumidor.
+            Crea, vincula y ejecuta queries contra microservicios QUERY.
           </p>
         </div>
         <Button onClick={() => setCreating(true)} data-testid="new-query">
@@ -281,6 +298,8 @@ export function QueriesAdminPage() {
           onClose={closeRolesModal}
         />
       ) : null}
+
+      <ExecuteDrawer query={executing} onClose={() => setExecuting(null)} />
     </section>
   );
 }
@@ -356,4 +375,239 @@ function RolesBindingModal({ query, onClose }: RolesBindingModalProps) {
       </ul>
     </Modal>
   );
+}
+
+/* ====================== execute drawer ====================== */
+
+interface ExecuteDrawerProps {
+  query: QueryAdminResponse | null;
+  onClose: () => void;
+}
+
+/**
+ * Runs a catalog query against its backing
+ * {@code query-service-<instance>} container. Auto-generates one
+ * {@code <Input>} per {@code :placeholder} token extracted from
+ * the SQL, POSTs {uuid, params} via {@link useExecuteQuery}, and
+ * renders the rows with the generic {@link ResultTable}. The
+ * {@code Form} primitive is NOT used here because it auto-renders
+ * Save semantics — wrong for "Execute".
+ */
+function ExecuteDrawer({ query, onClose }: ExecuteDrawerProps) {
+  const services = useMicroservices();
+  const execute = useExecuteQuery();
+  const toast = useToast();
+
+  const [paramValues, setParamValues] = useState<Record<string, QueryParamValue>>({});
+  const [lastResult, setLastResult] = useState<QueryExecutionResponse | null>(null);
+
+  // The instance bound to the query row. Falls back to the
+  // canonical "query-service" when the query is global (no
+  // MICROSERVICE_ID).
+  const instanceName = useMemo(() => {
+    if (!query || query.microserviceId == null) return null;
+    return (
+      services.data?.find((m) => m.id === query.microserviceId)?.instanceName ?? null
+    );
+  }, [query, services.data]);
+
+  const paramNames = useMemo(
+    () => (query ? extractQueryParams(query.query) : []),
+    [query],
+  );
+
+  // Reset local state every time we switch query so a stale
+  // result from a previous run doesn't leak into the new drawer.
+  const queryKey = query?.id ?? null;
+  useMemo(() => {
+    setParamValues({});
+    setLastResult(null);
+    execute.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryKey]);
+
+  if (!query) return null;
+
+  async function handleExecute() {
+    if (!query) return;
+    try {
+      const result = await execute.mutateAsync({
+        instanceName,
+        body: {
+          uuid: query.uuid,
+          params: paramValues,
+        },
+      });
+      setLastResult(result);
+      if (result.length === 0) {
+        toast.show("Consulta ejecutada — sin resultados", "success");
+      } else {
+        toast.show(`Consulta ejecutada — ${result.length} fila(s)`, "success");
+      }
+    } catch (err) {
+      toast.show(`Error: ${(err as Error).message}`, "error");
+    }
+  }
+
+  return (
+    <Drawer
+      open={!!query}
+      onClose={onClose}
+      title={`Ejecutar consulta ${query.uuid}`}
+      description={
+        instanceName
+          ? `Instancia: query-service-${instanceName}`
+          : "Instancia: query-service (canónica)"
+      }
+      width="lg"
+    >
+      <details className="mb-4 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+        <summary className="cursor-pointer font-medium text-slate-700">SQL</summary>
+        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-[11px] text-slate-700">
+          {query.query}
+        </pre>
+      </details>
+
+      {paramNames.length === 0 ? (
+        <p className="mb-4 text-sm text-slate-500">
+          Esta consulta no requiere parámetros.
+        </p>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleExecute();
+          }}
+          className="mb-4 grid gap-3"
+        >
+          {paramNames.map((name) => (
+            <Input
+              key={name}
+              label={name}
+              value={String(paramValues[name] ?? "")}
+              onChange={(e) =>
+                setParamValues((prev) => ({
+                  ...prev,
+                  [name]: e.target.value,
+                }))
+              }
+              data-testid={`param-${name}`}
+            />
+          ))}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={onClose}
+              data-testid="cancel-execute"
+            >
+              Cerrar
+            </Button>
+            <Button
+              type="submit"
+              loading={execute.isPending}
+              data-testid="run-execute"
+            >
+              Ejecutar
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {paramNames.length === 0 ? (
+        <div className="mb-4 flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={onClose}
+            data-testid="cancel-execute"
+          >
+            Cerrar
+          </Button>
+          <Button
+            type="button"
+            loading={execute.isPending}
+            onClick={() => void handleExecute()}
+            data-testid="run-execute"
+          >
+            Ejecutar
+          </Button>
+        </div>
+      ) : null}
+
+      {execute.isError ? (
+        <div
+          role="alert"
+          className="mb-4 rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700"
+          data-testid="execute-error"
+        >
+          {(execute.error as Error).message}
+        </div>
+      ) : null}
+
+      {lastResult && lastResult.length > 0 ? (
+        <ResultTable rows={lastResult} />
+      ) : lastResult ? (
+        <p
+          className="rounded border border-dashed border-slate-300 bg-white p-4 text-center text-sm text-slate-500"
+          data-testid="execute-empty"
+        >
+          Sin resultados.
+        </p>
+      ) : null}
+    </Drawer>
+  );
+}
+
+/* ====================== result table ====================== */
+
+interface ResultTableProps {
+  rows: QueryExecutionResponse;
+}
+
+/**
+ * Generic result table. The query-service response is
+ * {@code List<Map<String, Object>>} where the map keys are the
+ * JDBC column labels (insertion order preserved server-side and
+ * on the wire). We read the keys from the first row to derive
+ * the header.
+ */
+function ResultTable({ rows }: ResultTableProps) {
+  const columns = useMemo<Column<Record<string, unknown>>[]>(() => {
+    const first = rows[0];
+    if (!first) return [];
+    return Object.keys(first).map((key) => ({
+      key,
+      header: key,
+      render: (row: Record<string, unknown>) => formatCell(row[key]),
+    }));
+  }, [rows]);
+
+  return (
+    <div className="mt-2">
+      <p className="mb-2 text-xs text-slate-500">
+        {rows.length} fila(s) devueltas
+      </p>
+      <Table
+        columns={columns}
+        rows={rows}
+        rowKey={(row) => {
+          const first = Object.values(row)[0];
+          return first == null ? JSON.stringify(row) : String(first);
+        }}
+      />
+    </div>
+  );
+}
+
+function formatCell(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
 }

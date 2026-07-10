@@ -27,14 +27,26 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- Observability: pure-OTLP export via the single Boot 4 starter. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-opentelemetry</artifactId>
+        </dependency>
         <!--
-            Prometheus scrape endpoint. Version is resolved by the
-            Spring Boot 4.0.7 BOM. Exposed via /actuator/prometheus
-            for the Grafana Alloy scraper, alongside health,info.
+            Boot 4's spring-boot-starter-opentelemetry does NOT install a
+            Logback appender out of the box. We add it explicitly so
+            eurekaserver joins the rest of the stack in shipping every log
+            event as an OTLP log record to Alloy / Loki. eurekaserver does
+            not depend on `common` (it has no shared entities), so it keeps
+            its own copy of the appender config — see
+            src/main/java/com/co/eurekatic/eureka/observability/
+            OpenTelemetryAppenderConfig.java. Version is the same one
+            pinned in the parent <properties> block.
         -->
         <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-registry-prometheus</artifactId>
+            <groupId>io.opentelemetry.instrumentation</groupId>
+            <artifactId>opentelemetry-logback-appender-1.0</artifactId>
+            <version>${opentelemetry-instrumentation.version}</version>
         </dependency>
     </dependencies>
 

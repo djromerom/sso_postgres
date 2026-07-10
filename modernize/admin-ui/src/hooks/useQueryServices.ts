@@ -1,8 +1,9 @@
 /**
- * Hooks for the Query Services page. The list comes from the
- * regular {@link useMicroservices} hook (filtered by kind=QUERY
- * on the page); status, logs, and restart are per-container
- * hooks that proxy to the provisioner via sso-admin.
+ * Ops hooks for the Query Services page. The list itself comes
+ * from the regular {@link useMicroservices} hook (filtered by
+ * kind=QUERY on the page, so CRUD invalidation refreshes it);
+ * these are the per-container hooks that proxy to the provisioner
+ * via sso-admin — status, logs, and restart.
  *
  * Polling cadence for {@link useQueryServiceStatus}: 5s while
  * a row is in a non-UP state, 0 (idle) when every row is UP.
@@ -16,8 +17,8 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { queryServicesApi, microservicesApi } from "@/api/endpoints";
-import type { ContainerStatusResponse, MicroserviceResponse } from "@/api/types";
+import { queryServicesApi } from "@/api/endpoints";
+import type { ContainerStatusResponse } from "@/api/types";
 
 export const queryServiceKeys = {
   all: ["query-services"] as const,
@@ -25,17 +26,6 @@ export const queryServiceKeys = {
   logs: (id: number, tail: number) =>
     [...queryServiceKeys.all, "logs", id, tail] as const,
 };
-
-/** Returns just the kind=QUERY rows from the microservice list. */
-export function useQueryServices() {
-  return useQuery({
-    queryKey: [...queryServiceKeys.all, "list"],
-    queryFn: async (): Promise<MicroserviceResponse[]> => {
-      const all = await microservicesApi.list();
-      return all.filter((m) => m.kind === "QUERY");
-    },
-  });
-}
 
 /**
  * Per-row container status with smart polling:

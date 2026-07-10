@@ -54,40 +54,13 @@
         </dependency>
 
         <!-- Observability: pure-OTLP export of metrics, traces and logs
-             to the Grafana Alloy collector (no /actuator/prometheus scrape
-             endpoint — one protocol for everything).
+             to the Grafana Alloy collector. One starter handles everything.
 
-               micrometer-registry-otlp       -> metrics over OTLP
-               micrometer-tracing-bridge-otel -> Micrometer spans -> OTel
-               opentelemetry-exporter-otlp     -> the OTLP wire exporter
-                                                  (traces + logs)
-
-             All three are version-managed by the Spring Boot 4.0 BOM,
-             so no explicit <version> tags. The endpoint is configured
-             in application.yml via management.otlp.* and defaults to
-             ${OTEL_EXPORTER_OTLP_ENDPOINT} (set to http://alloy:4318 in
-             docker-compose). -->
-
-        <!-- ALSO expose /actuator/prometheus for the Grafana Alloy scraper.
-             Micrometer supports multiple registries at once — OTLP pushes
-             every 10s for the primary pipeline, Prometheus exposes a
-             /actuator/prometheus endpoint that Alloy can scrape every
-             15s as a fallback / second source of truth. -->
+             The endpoint defaults to ${OTEL_EXPORTER_OTLP_ENDPOINT}
+             (set to http://alloy:4318 in docker-compose). -->
         <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-registry-prometheus</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-registry-otlp</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-tracing-bridge-otel</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-exporter-otlp</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-opentelemetry</artifactId>
         </dependency>
 
         <!-- Reactive Spring Security 6 -->

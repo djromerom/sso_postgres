@@ -37,12 +37,10 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
-        <!-- Exposes /actuator/prometheus for the Grafana Alloy scraper.
-             Without this dep the endpoint 404s — actuator is wired but
-             the Prometheus format converter isn't on the classpath. -->
+        <!-- Observability: pure-OTLP export via the single Boot 4 starter. -->
         <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-registry-prometheus</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-opentelemetry</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.cloud</groupId>
@@ -95,6 +93,7 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+
         <!-- Testcontainers core: we use GenericContainer with the
              redis:7-alpine image rather than the dedicated
              org.testcontainers:redis module, because the parent BOM

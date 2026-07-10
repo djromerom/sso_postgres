@@ -142,6 +142,41 @@ sso:
     # the failure mode is visible in the config rather than hidden
     # in code.
     fail-open: false
+  session:
+    user-roles:
+      # TTL for the cached effective-roles set. Matches the
+      # access-token lifetime (3600s) so a fresh login re-reads
+      # roles and any subsequent request within the window reads
+      # the cached set. Admin services invalidate explicitly on
+      # every binding mutation — see the SessionInvalidationClient
+      # in sso-admin.
+      ttl-seconds: 3600
+      # Redis key namespace for the role-set cache. Distinct from
+      # sso:refresh:* so the two caches' lifecycles are
+      # independent (e.g. a FLUSHDB scoped to one prefix doesn't
+      # affect the other).
+      key-prefix: sso:session:user-roles
+      # Shared secret that gates POST /internal/cache/user-roles/{email}.
+      # sso-admin includes it as the X-Session-Cache-Secret header
+      # after every role / group binding mutation. MUST be set
+      # identically in auth-center and sso-admin — the env var
+      # SSO_SESSION_USER_ROLES_INVALIDATION_SECRET is the canonical
+      # carrier (the long form matches Spring relaxed binding of the
+      # property path sso.session.user-roles.invalidation-secret that
+      # SessionInvalidationClient uses on the sso-admin side, so a
+      # single env var feeds both services).
+      invalidation-secret: ${SSO_SESSION_USER_ROLES_INVALIDATION_SECRET:}
+      # Master switch for the cache. Production must leave this
+      # true. Tests override it to false via @TestPropertySource so
+      # cached role sets from one test method don't leak into the
+      # next when the user table is reseeded.
+      enabled: true
+      # TTL for the @Cacheable("user-by-email") backing
+      # GET /getInfoUser. Short (60s) so a disabled / re-enabled
+      # user is reflected within a minute without an explicit
+      # eviction hop. The cache lives in auth-center only — there
+      # is no cross-service writer to invalidate from.
+      user-by-email-ttl-seconds: 60
 
 management:
   endpoints:
@@ -153,6 +188,27 @@ management:
       probes:
         enabled: true
       show-details: never
+  otlp:
+    metrics:
+      export:
+        url: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/metrics
+        step: 10s
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
+    logging:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/logs
+    resource-attributes:
+      service.namespace: sso
+      deployment.environment: ${DEPLOY_ENV:dev}
+  tracing:
+    enabled: true
+    sampling:
+      probability: ${OTEL_TRACING_SAMPLE_RATE:1.0}
 
 logging:
   level:

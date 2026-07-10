@@ -26,6 +26,12 @@
 #   hello-service  — reference downstream service, registers with
 #                    Eureka, reachable at /hello-service/** via the
 #                    gateway's dynamic route locator.
+#   notification-service
+#                  — multichannel notification consumer (email/SMS/push).
+#                    Reads JSON envelopes off RabbitMQ, renders
+#                    templates, dispatches to providers with circuit
+#                    breakers, and logs every send to Neon for
+#                    idempotency. Talks to Neon over SSL.
 #   sso-admin      — User/Role/Group CRUD + activation flow (Phase 1
 #                    of the sso-service port). Reachable at
 #                    /sso-admin/** through the gateway. Sends
@@ -163,6 +169,8 @@ services:
       # Standalone Eureka — does not register with itself.
       EUREKA_CLIENT_REGISTER_WITH_EUREKA: "false"
       EUREKA_CLIENT_FETCH_REGISTRY: "false"
+      # Observability: push OTLP to Alloy
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT}"
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8761; printf 'GET /actuator/health HTTP/1.0\r\n\r\n' >&3; grep -q UP <&3"]
       interval: 10s
@@ -240,6 +248,17 @@ services:
       SSO_BOOTSTRAP_ENABLED: ${SSO_BOOTSTRAP_ENABLED}
       SSO_ADMIN_EMAIL: ${SSO_ADMIN_EMAIL}
       SSO_ADMIN_PASSWORD: ${SSO_ADMIN_PASSWORD}
+      SSO_CORS_ALLOWED_ORIGINS: ${SSO_CORS_ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:5173}
+      # Session-cache (effective roles in Redis). Shared secret
+      # must match the value sso-admin is configured with — both
+      # services read SSO_SESSION_USER_ROLES_INVALIDATION_SECRET
+      # and use it as the X-Session-Cache-Secret header value on
+      # the internal POST /internal/cache/user-roles/{email}.
+      # Empty default rejects every request (fail-closed posture
+      # on the controller side; documented in CacheAdminController).
+      SSO_SESSION_USER_ROLES_INVALIDATION_SECRET: ${SSO_SESSION_USER_ROLES_INVALIDATION_SECRET:-}
+      # Observability: push OTLP to Alloy
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT}"
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8081; printf 'GET /actuator/health HTTP/1.0\r\n\r\n' >&3; grep -q UP <&3"]
       interval: 10s
@@ -286,7 +305,7 @@ services:
       # collector over the compose network. When the observability
       # services are not running these exporters just log a connection
       # warning and the gateway keeps serving — telemetry is best-effort.
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy:4318"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT}"
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080; printf 'GET /actuator/health HTTP/1.0\r\n\r\n' >&3; grep -q UP <&3"]
       interval: 10s
@@ -310,6 +329,8 @@ services:
       - "${HELLO_SERVICE_PORT:-8082}:8082"
     environment:
       EUREKA_URL: "http://eurekaserver:8761/eureka"
+      # Observability: push OTLP to Alloy
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT}"
     # No healthcheck on the public port — the gateway's
     # actuator/health is the canonical signal, and the service
     # itself doesn't expose /actuator/health to the public.
@@ -408,12 +429,22 @@ services:
       RABBITMQ_PORT: "5672"
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASS: ${RABBITMQ_PASS}
+      # Observability: push OTLP to Alloy
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT}"
       # App-access cache (SsoAdminAppAccessManager /
       # AppAccessService). Same Redis instance + credentials
       # auth-center already uses for refresh tokens.
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # Session-cache invalidation hop — sso-admin POSTs to
+      # auth-center /internal/cache/user-roles/{email} after every
+      # role / group binding mutation. Base URL is compose-DNS by
+      # default; override for host-mode dev. Shared secret MUST
+      # match the value on auth-center (same env var name feeds
+      # both sides).
+      SSO_AUTH_CENTER_BASE_URL: ${SSO_AUTH_CENTER_BASE_URL:-http://auth-center:8081}
+      SSO_SESSION_USER_ROLES_INVALIDATION_SECRET: ${SSO_SESSION_USER_ROLES_INVALIDATION_SECRET:-}
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8083; printf 'GET /actuator/health HTTP/1.0\r\n\r\n' >&3; grep -q UP <&3"]
       interval: 10s
@@ -488,6 +519,8 @@ services:
     mem_limit: 640m
     mem_reservation: 512m
     depends_on:
+      flyway:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       rabbitmq:
@@ -495,9 +528,15 @@ services:
       eurekaserver:
         condition: service_started
     environment:
-      DB_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB}"
-      DB_USER: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      # Neon cloud DB (same target as auth-center / sso-admin).
+      # The local `postgres` container is used only by the
+      # RabbitMQ healthcheck chain — notification-service
+      # never opens a JDBC connection to it. Using ${DB_URL}
+      # keeps the password consistent with auth-center's.
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://${DB_URL}/${DB_NAME}?sslmode=${DB_SSLMODE}&channel_binding=${DB_CHANNEL_BINDING}"
+      DB_URL: "jdbc:postgresql://${DB_URL}/${DB_NAME}?sslmode=${DB_SSLMODE}&channel_binding=${DB_CHANNEL_BINDING}"
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
       EUREKA_URL: "http://eurekaserver:8761/eureka"
       # RabbitMQ
       RABBITMQ_HOST: rabbitmq
@@ -511,6 +550,8 @@ services:
       # providers self-disable with WARN. Set in prod.
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      # Observability: push OTLP to Alloy
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT}"
       VONAGE_API_KEY: ${VONAGE_API_KEY:-}
       VONAGE_API_SECRET: ${VONAGE_API_SECRET:-}
       SMTP_GMAIL_USER: ${SMTP_GMAIL_USER:-}
@@ -583,6 +624,8 @@ services:
       QUERY_DS_USERNAME: ${QUERY_DS_POSTGRES_USER}
       QUERY_DS_PASSWORD: ${QUERY_DS_POSTGRES_PASSWORD}
       QUERY_DS_POOL_SIZE: "10"
+      # Observability: push OTLP to Alloy
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT}"
       # Eureka + JWT (same key auth-center uses)
       EUREKA_URL: "http://eurekaserver:8761/eureka"
       JWT_SECRET: ${JWT_SECRET}
@@ -628,6 +671,8 @@ services:
       EUREKA_URL: "http://eurekaserver:8761/eureka"
       JWT_SECRET: ${JWT_SECRET}
       QUERY_CATALOG_BASE_URL: "http://sso-api-gateway:8080/sso-admin"
+      # Observability: push OTLP to Alloy
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT}"
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8084; printf 'GET /actuator/health HTTP/1.0\r\n\r\n' >&3; grep -q UP <&3"]
       interval: 10s
@@ -697,6 +742,8 @@ services:
       # container as JWT_SECRET env var. Must match the
       # secret auth-center uses to sign tokens.
       DOCKER_JWT_SECRET: ${JWT_SECRET}
+      # Observability: push OTLP to Alloy
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT}"
     healthcheck:
       # The provisioner image installs curl (it talks to
       # the Docker socket via curl --unix-socket) but not
@@ -733,6 +780,14 @@ services:
     restart: unless-stopped
     mem_limit: 300m
     mem_reservation: 192m
+    # The Grafana host user (root inside the container, see below) needs
+    # to read the docker socket to enumerate + tail every compose-managed
+    # container. We run alloy as a single process as user root and rely on
+    # the host socket's perms (mode 0600 on colima + Docker Desktop). On
+    # Linux servers where the socket is mode 0660 + `root:docker`, replace
+    # `user: "0:0"` with `group_add: ["<docker-group-gid>"]` and drop the
+    # explicit user.
+    user: "0:0"
     command:
       - run
       - --server.http.listen-addr=0.0.0.0:12345
@@ -740,6 +795,12 @@ services:
       - /etc/alloy/config.alloy
     volumes:
       - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # loki.source.docker enumerates + tails every running container's
+      # stdout/stderr. The provisioner service already binds /var/run/
+      # docker.sock so this compose network is the trust boundary for
+      # "who can spawn containers" — alloy only needs read access to
+      # the socket to LIST and STREAM.
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       # Alloy UI (http://localhost:12345) + Faro receiver for the SPA
       # (the browser runs on the host, so this one needs a host mapping).
@@ -759,8 +820,11 @@ services:
     image: grafana/tempo:2.10.7
     container_name: sso-tempo
     restart: unless-stopped
-    mem_limit: 512m
-    mem_reservation: 256m
+    # Bumped from 512m after enabling metrics_generator (spans
+    # processed into RED metrics + service graph; needs the
+    # extra headroom on cold start when the WAL replays).
+    mem_limit: 768m
+    mem_reservation: 384m
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     volumes:
       - ./observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro

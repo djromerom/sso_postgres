@@ -8,8 +8,9 @@ import { RestorePasswordPage } from "@/auth/RestorePasswordPage";
 import { App } from "@/App";
 import { GroupsListPage } from "@/pages/groups/GroupsListPage";
 import { MicroservicesListPage } from "@/pages/microservices/MicroservicesListPage";
-import { QueriesCatalogPage } from "@/pages/queries/QueriesCatalogPage";
+import { QueryServicesListPage } from "@/pages/query-services/QueryServicesListPage";
 import { QueriesAdminPage } from "@/pages/queries/QueriesAdminPage";
+import { QueriesDynamicPage } from "@/pages/queries/QueriesDynamicPage";
 import { EndpointsListPage } from "@/pages/endpoints/EndpointsListPage";
 import { RoutesListPage } from "@/pages/routes/RoutesListPage";
 import { RolesListPage } from "@/pages/roles/RolesListPage";
@@ -81,10 +82,14 @@ export const router = createBrowserRouter([
           { path: "roles", element: <RolesListPage /> },
           { path: "groups", element: <GroupsListPage /> },
           { path: "microservices", element: <MicroservicesListPage /> },
-          { path: "queries", element: <QueriesCatalogPage /> },
+          { path: "query-services", element: <QueryServicesListPage /> },
+          // Legacy path — the consumer-only "Queries Catalog" page
+          // was merged into the admin page at /admin/query-catalog
+          // (which now also executes). Redirect so old links/menus
+          // still land somewhere sane.
+          { path: "queries", element: <Navigate to="/admin/query-catalog" replace /> },
           { path: "query-catalog", element: <QueriesAdminPage /> },
-          { path: "query-services", element: <Navigate to="microservices" replace /> },
-          { path: "dynamic-crud", element: <Navigate to="queries" replace /> },
+          { path: "dynamic-crud", element: <QueriesDynamicPage /> },
           { path: "endpoints", element: <EndpointsListPage /> },
           { path: "routes", element: <RoutesListPage /> },
           { path: "apps", element: <AppsListPage /> },

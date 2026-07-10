@@ -123,7 +123,7 @@ public class SecurityConfig {
                         // boundary argument: the scraper lives on the
                         // internal docker network, not on the LAN.
                         .requestMatchers("/actuator/health", "/actuator/health/**",
-                                "/actuator/info", "/actuator/prometheus").permitAll()
+                                "/actuator/info").permitAll()
                         // Catalog read endpoints — any
                         // authenticated caller; the per-row
                         // role check happens inside the

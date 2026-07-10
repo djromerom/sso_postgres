@@ -3,3 +3,13 @@
 *.iml
 target
 *.class
+
+
+# IA
+
+.agents/
+.claude/
+.playwright-mcp/
+**/docs/brainstorming/
+**/docs/superpowers/
+skills-lock.json

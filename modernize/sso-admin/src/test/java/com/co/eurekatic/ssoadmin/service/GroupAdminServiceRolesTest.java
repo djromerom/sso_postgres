@@ -5,6 +5,7 @@ import com.co.eurekatic.common.entity.Role;
 import com.co.eurekatic.common.repository.GroupRepository;
 import com.co.eurekatic.common.repository.RoleRepository;
 import com.co.eurekatic.common.repository.UserRepository;
+import com.co.eurekatic.ssoadmin.client.SessionInvalidationClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -23,6 +24,7 @@ class GroupAdminServiceRolesTest {
     @Mock GroupRepository groupRepository;
     @Mock UserRepository userRepository;
     @Mock RoleRepository roleRepository;
+    @Mock SessionInvalidationClient sessionInvalidationClient;
     @InjectMocks GroupAdminService service;
 
     @Test

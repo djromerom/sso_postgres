@@ -10,11 +10,17 @@ import {
   useMicroservices,
   useUpdateMicroservice,
 } from "@/hooks/useMicroservices";
-import type { MicroserviceResponse, MicroserviceKind } from "@/api/types";
+import type { MicroserviceResponse } from "@/api/types";
 import { MicroserviceFormDrawer } from "./MicroserviceFormDrawer";
 import type { MicroserviceFormValues } from "@/schemas";
-import { QueryServicesPanel } from "./QueryServicesPanel";
 
+/**
+ * CRUD for REST microservices only — the classic gateway routing
+ * rules. QUERY-kind services (JDBC-backed query-service
+ * containers) live on their own page at {@code /admin/query-services},
+ * which owns their CRUD + ops. Keeping the two apart means neither
+ * table nor drawer has to branch on `kind`.
+ */
 export function MicroservicesListPage() {
   const microservices = useMicroservices();
   const createMs = useCreateMicroservice();
@@ -26,15 +32,21 @@ export function MicroservicesListPage() {
   const [deleting, setDeleting] = useState<MicroserviceResponse | null>(null);
   const [search, setSearch] = useState("");
 
+  // REST rows only; QUERY services are managed on their own page.
+  const restRows = useMemo(
+    () => (microservices.data ?? []).filter((m) => m.kind === "REST"),
+    [microservices.data],
+  );
+
   const filteredMicroservices = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return microservices.data ?? [];
-    return (microservices.data ?? []).filter(
+    if (!q) return restRows;
+    return restRows.filter(
       (m) =>
         m.serviceId.toLowerCase().includes(q) ||
         (m.description ?? "").toLowerCase().includes(q),
     );
-  }, [microservices.data, search]);
+  }, [restRows, search]);
 
   async function handleSubmit(values: MicroserviceFormValues & { id?: number }) {
     try {
@@ -43,9 +55,7 @@ export function MicroservicesListPage() {
         toast.show("Microservicio actualizado", "success");
       } else {
         await createMs.mutateAsync(values as Parameters<typeof createMs.mutateAsync>[0]);
-        toast.show(values.kind === "QUERY"
-          ? "Microservicio QUERY creado; aprovisionando…"
-          : "Microservicio creado", "success");
+        toast.show("Microservicio creado", "success");
       }
       setEditing(null);
       setCreating(false);
@@ -66,11 +76,6 @@ export function MicroservicesListPage() {
   const columns: Column<MicroserviceResponse>[] = [
     { key: "serviceId", header: "Service ID", render: (m) => m.serviceId },
     {
-      key: "kind",
-      header: "Tipo",
-      render: (m) => <KindBadge kind={m.kind} />,
-    },
-    {
       key: "requestUri",
       header: "Request URI",
       render: (m) => m.requestUri,
@@ -78,10 +83,7 @@ export function MicroservicesListPage() {
     {
       key: "target",
       header: "Target",
-      render: (m) =>
-        m.kind === "QUERY"
-          ? `${m.dialect ?? "—"}${m.instanceName ? ` (${m.instanceName})` : ""}`
-          : `${m.targetUrlHost}:${m.targetUrlPort}${m.targetUriPath}`,
+      render: (m) => `${m.targetUrlHost}:${m.targetUrlPort}${m.targetUriPath}`,
     },
     {
       key: "description",
@@ -123,11 +125,8 @@ export function MicroservicesListPage() {
         rows={filteredMicroservices}
         rowKey={(m) => m.id}
         loading={microservices.isLoading}
-        empty={search ? "Sin resultados." : "Aún no hay microservicios."}
+        empty={search ? "Sin resultados." : "Aún no hay microservicios REST."}
       />
-      <div className="mt-8">
-        <QueryServicesPanel rows={microservices.data ?? []} />
-      </div>
       <MicroserviceFormDrawer
         open={creating || editing !== null}
         microservice={editing}
@@ -158,26 +157,9 @@ export function MicroservicesListPage() {
         }
       >
         <p className="text-sm text-slate-600">
-          {deleting?.kind === "QUERY"
-            ? "Esto también des-aprovisiona el contenedor asociado vía el sidecar."
-            : "Si hay endpoints vinculados, el backend podría rechazar la operación."}
+          Si hay endpoints vinculados, el backend podría rechazar la operación.
         </p>
       </Modal>
     </section>
-  );
-}
-
-function KindBadge({ kind }: { kind: MicroserviceKind }) {
-  return (
-    <span
-      className={[
-        "inline-flex items-center rounded px-2 py-0.5 text-xs font-medium",
-        kind === "QUERY"
-          ? "bg-violet-100 text-violet-800"
-          : "bg-slate-100 text-slate-700",
-      ].join(" ")}
-    >
-      {kind}
-    </span>
   );
 }

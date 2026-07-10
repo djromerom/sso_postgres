@@ -154,6 +154,9 @@ class SsoAdminIntegrationTest {
         jdbcTemplate.execute("DELETE FROM role_query");
         jdbcTemplate.execute("DELETE FROM role_write");
         jdbcTemplate.execute("DELETE FROM role_app");
+        jdbcTemplate.execute("DELETE FROM app_route");
+        jdbcTemplate.execute("DELETE FROM app_microservice");
+        jdbcTemplate.execute("DELETE FROM app_users");
         jdbcTemplate.execute("DELETE FROM role_endpoint");
         queryRepository.deleteAll();
         writeDefinitionRepository.deleteAll();
@@ -177,9 +180,150 @@ class SsoAdminIntegrationTest {
         root.addRole(admin);
         userRepository.save(root);
 
+        // Seed the SSO-ADMIN app and bind the ADMIN role to it.
+        // SsoAdminAppAccessManager enforces role_app binding on every
+        // request — without this, all authenticated requests get 403.
+        App ssoAdminApp = new App();
+        ssoAdminApp.setName("SSO-ADMIN");
+        ssoAdminApp.setDescription("SSO Admin Console");
+        ssoAdminApp.addRole(admin);
+        appRepository.save(ssoAdminApp);
+
+        // Flyway never runs against this test's H2 database (see
+        // adminRoleAlsoRequiresRoleEndpointBinding's Javadoc), so
+        // without this, every business CRUD test below would 403
+        // under the fail-closed SsoAdminAccessManager — role_app
+        // alone is no longer sufficient. Mirrors the V15 migration's
+        // catalog + "ADMIN gets everything" grant so ADMIN's access
+        // here matches the real deployment out of the box.
+        seedAllEndpointsForAdmin();
+
         // Default no-op so the mock doesn't blow up.
         doNothing().when(emailServiceMock).sendActivationEmail(any(), any());
         doNothing().when(emailServiceMock).sendRestorePasswordEmail(any(), any());
+    }
+
+    /**
+     * Mirrors the V15 migration's endpoint catalog and its
+     * "ADMIN gets every endpoint" grant (see V15's own header
+     * comment) — kept in sync by hand since this test's H2
+     * database never runs Flyway.
+     */
+    private void seedAllEndpointsForAdmin() {
+        String[][] endpoints = {
+            {"POST", "/app/save"},
+            {"PUT", "/app/update"},
+            {"GET", "/app/getApps"},
+            {"GET", "/app/{id}"},
+            {"DELETE", "/app/{id}"},
+            {"POST", "/app/{id}/role/{roleId}"},
+            {"DELETE", "/app/{id}/role/{roleId}"},
+            {"GET", "/app/{id}/roles/checked"},
+            {"POST", "/app/{id}/user/{userId}"},
+            {"DELETE", "/app/{id}/user/{userId}"},
+            {"GET", "/app/{id}/users/checked"},
+            {"POST", "/app/{id}/route/{routeId}"},
+            {"DELETE", "/app/{id}/route/{routeId}"},
+            {"GET", "/app/{id}/routes/checked"},
+            {"POST", "/app/{id}/microservice/{microserviceId}"},
+            {"DELETE", "/app/{id}/microservice/{microserviceId}"},
+            {"GET", "/app/{id}/microservices/checked"},
+            {"POST", "/endpoint/save"},
+            {"PUT", "/endpoint/update"},
+            {"GET", "/endpoint/getEndpoints"},
+            {"GET", "/endpoint/{id}"},
+            {"DELETE", "/endpoint/{id}"},
+            {"POST", "/endpoint/{id}/microservice/{microserviceId}"},
+            {"DELETE", "/endpoint/{id}/microservice/{microserviceId}"},
+            {"GET", "/endpoint/{id}/microservices/checked"},
+            {"POST", "/endpoint/{id}/role/{roleId}"},
+            {"DELETE", "/endpoint/{id}/role/{roleId}"},
+            {"GET", "/endpoint/{id}/roles/checked"},
+            {"GET", "/endpoint/bySignature"},
+            {"POST", "/group"},
+            {"PUT", "/group/update"},
+            {"GET", "/group"},
+            {"POST", "/group/bindUserGroup"},
+            {"POST", "/group/{id}/role/{roleId}"},
+            {"DELETE", "/group/{id}/role/{roleId}"},
+            {"GET", "/group/{id}/roles/checked"},
+            {"POST", "/microservice/save"},
+            {"POST", "/microservice/testConnection"},
+            {"PUT", "/microservice/update"},
+            {"GET", "/microservice/getMicroservices"},
+            {"GET", "/microservice/getMicroservice"},
+            {"GET", "/microservice/{id}"},
+            {"DELETE", "/microservice/{id}"},
+            {"GET", "/microservice/{id}/container/status"},
+            {"GET", "/microservice/{id}/container/logs"},
+            {"POST", "/microservice/{id}/container/restart"},
+            {"GET", "/myMenu"},
+            {"POST", "/query/save"},
+            {"PUT", "/query/update"},
+            {"GET", "/query/getQueries"},
+            {"GET", "/query/{id}"},
+            {"DELETE", "/query/{id}"},
+            {"POST", "/query/{id}/role/{roleId}"},
+            {"DELETE", "/query/{id}/role/{roleId}"},
+            {"GET", "/query/{id}/roles/checked"},
+            {"GET", "/query/byUuid"},
+            {"GET", "/getQuery"},
+            {"GET", "/myQueries"},
+            {"POST", "/role/createRole"},
+            {"PUT", "/role/updateRole"},
+            {"GET", "/role/getRoles"},
+            {"GET", "/role/getRolesOwn"},
+            {"GET", "/role/users"},
+            {"GET", "/role/users/checked"},
+            {"POST", "/route/save"},
+            {"PUT", "/route/update"},
+            {"GET", "/route/getRoutes"},
+            {"GET", "/route/getRoutesByParent"},
+            {"GET", "/route/{id}"},
+            {"DELETE", "/route/{id}"},
+            {"POST", "/route/{id}/role/{roleId}"},
+            {"DELETE", "/route/{id}/role/{roleId}"},
+            {"GET", "/route/{id}/roles/checked"},
+            {"POST", "/createAccount"},
+            {"PUT", "/updateAccount"},
+            {"POST", "/activateAccount"},
+            {"GET", "/forgotPassword"},
+            {"POST", "/restorePassword"},
+            {"GET", "/getUsers"},
+            {"POST", "/resendActivation/{id}"},
+            {"POST", "/deactivateAccount/{id}"},
+            {"POST", "/reactivateAccount/{id}"},
+            {"GET", "/getRolesByEmail"},
+            {"GET", "/user/roles"},
+            {"POST", "/bindUserRole"},
+            {"DELETE", "/unbindUserRole"},
+            {"GET", "/getWrite"},
+            {"POST", "/write/save"},
+            {"PUT", "/write/update"},
+            {"GET", "/write/getWrites"},
+            {"GET", "/write/{id}"},
+            {"DELETE", "/write/{id}"},
+            {"POST", "/write/{id}/role/{roleId}"},
+            {"DELETE", "/write/{id}/role/{roleId}"},
+            {"GET", "/write/{id}/roles/checked"},
+            {"GET", "/write/byUuid"},
+            {"POST", "/login"},
+            {"GET", "/getApiToken"},
+            {"GET", "/getInfoUser"},
+            {"GET", "/myApps"},
+            {"GET", "/getUsersSSO"},
+            {"POST", "/auth/refresh"},
+            {"POST", "/auth/logout"},
+            {"POST", "/googleLogin"},
+        };
+        for (String[] ep : endpoints) {
+            jdbcTemplate.update(
+                    "INSERT INTO endpoint (method, path, description, numberparams) VALUES (?, ?, ?, 0)",
+                    ep[0], ep[1], ep[0] + " " + ep[1]);
+        }
+        jdbcTemplate.update(
+                "INSERT INTO role_endpoint (endpoint_id, role_id) " +
+                        "SELECT e.id_endpoint, r.id_role FROM endpoint e CROSS JOIN role r WHERE r.name = 'ADMIN'");
     }
 
     /* ====================== public endpoints ====================== */
@@ -233,11 +377,17 @@ class SsoAdminIntegrationTest {
 
         // role_app to SSO-ADMIN — necessary, but (per the new model)
         // no longer sufficient on its own for a non-ADMIN role.
-        App app = new App();
-        app.setName("SSO-ADMIN");
-        app.setDescription("SSO Admin console");
-        app.addRole(support);
-        appRepository.save(app);
+        // setUp() already seeded the SSO-ADMIN app (bound to ADMIN);
+        // reuse that row rather than inserting a second one with the
+        // same unique `name`. Bind via a native insert, not
+        // `app.addRole(support)` — `App.roles` is a LAZY collection
+        // and the entity returned by findByName() is detached by
+        // the time we'd mutate it (each repository call is its own
+        // transaction), so touching the collection here throws
+        // LazyInitializationException.
+        Long ssoAdminAppId = appRepository.findByName("SSO-ADMIN").orElseThrow().getId();
+        jdbcTemplate.update("INSERT INTO role_app (id_app, id_role) VALUES (?, ?)",
+                ssoAdminAppId, support.getId());
 
         String token = tokenFor("soporte@example.com", "SOPORTE");
 
@@ -275,19 +425,19 @@ class SsoAdminIntegrationTest {
      * ADMIN has NO bypass on {@code role_endpoint} — a deliberate
      * choice (see {@code SsoAdminAccessManager}'s Javadoc) so the
      * per-endpoint toggle on the Endpoints admin screen never
-     * silently no-ops for ADMIN. Proven directly here rather than
-     * relying on V15's seed data, since this test's fresh H2 DB
-     * never runs Flyway.
+     * silently no-ops for ADMIN. setUp() seeds ADMIN with the full
+     * V15-equivalent catalog (see {@code seedAllEndpointsForAdmin})
+     * so the other business tests don't all need their own binding;
+     * this test wipes that grant back to empty first so it can prove
+     * the underlying rule in isolation, same as it did back when
+     * setUp() left role_endpoint empty by default.
      */
     @Test
     void adminRoleAlsoRequiresRoleEndpointBinding() {
         Role admin = roleRepository.findByName("ADMIN").orElseThrow();
 
-        App app = new App();
-        app.setName("SSO-ADMIN");
-        app.setDescription("SSO Admin console");
-        app.addRole(admin);
-        appRepository.save(app);
+        jdbcTemplate.execute("DELETE FROM role_endpoint");
+        endpointRepository.deleteAll();
 
         String token = tokenFor("root@example.com", "ADMIN");
 

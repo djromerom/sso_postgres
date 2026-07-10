@@ -7,11 +7,10 @@ import { queryAdminApi } from "@/api/endpoints";
 import type { QueryAdminRequest, QueryAdminResponse, QueryRoleChecked } from "@/api/types";
 
 /**
- * TanStack Query keys for the admin CRUD surface. Distinct
- * from the consumer-side {@link useQueriesForInstance}
- * keys so a mutation on one side never invalidates the other
- * — that would cause spurious refetches while a user is in
- * the middle of executing a query.
+ * TanStack Query keys for the queries catalog CRUD surface
+ * ({@code QueriesAdminPage}). Query execution is a fire-and-
+ * forget mutation ({@link useExecuteQuery}) with no cached list
+ * of its own, so nothing here needs to coordinate with it.
  */
 export const queryAdminKeys = {
   all: ["queryAdmin"] as const,
@@ -93,17 +92,13 @@ export function useUnbindQueryRole() {
 export type { QueryAdminRequest, QueryAdminResponse, QueryRoleChecked };
 
 /**
- * Manually invalidate both the admin list and the consumer
- * catalog after a role-binding change. The consumer catalog
- * filters by the caller's role authorization, so adding a
- * role for a new query requires the consumer view to refetch
- * too. Bounded to the use-case the admin page needs; the
- * page calls this after closing its role modal.
+ * Manually invalidate the admin list after a role-binding or
+ * delete change so the roles-count column refetches. The page
+ * calls this after closing its role modal / confirming a delete.
  */
 export function useInvalidateQueryAdminAndCatalog() {
   const qc = useQueryClient();
   return () => {
     void qc.invalidateQueries({ queryKey: queryAdminKeys.all });
-    void qc.invalidateQueries({ queryKey: ["queries"] });
   };
 }

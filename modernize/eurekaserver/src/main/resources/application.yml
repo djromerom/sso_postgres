@@ -27,10 +27,9 @@ management:
   endpoints:
     web:
       exposure:
-        # Lock down to health/info/prometheus only — never expose
-        # /env, /heapdump, etc. /actuator/prometheus is read by the
-        # Grafana Alloy scraper over the internal docker network.
-        include: health,info,prometheus
+        # Lock down to health/info only — never expose
+        # /env, /heapdump, etc.
+        include: health,info
   endpoint:
     health:
       probes:
@@ -39,6 +38,27 @@ management:
   health:
     eureka:
       enabled: true
+  otlp:
+    metrics:
+      export:
+        url: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/metrics
+        step: 10s
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
+    logging:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/logs
+    resource-attributes:
+      service.namespace: sso
+      deployment.environment: ${DEPLOY_ENV:dev}
+  tracing:
+    enabled: true
+    sampling:
+      probability: ${OTEL_TRACING_SAMPLE_RATE:1.0}
 
 logging:
   level:

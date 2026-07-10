@@ -85,6 +85,10 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect",
         "sso.jwt.secret=integration-test-secret-which-is-at-least-32-bytes-long-1234567890",
+        // Same rationale as AuthCenterIntegrationTest — keep the
+        // login flow talking to the DB so the activation flip is
+        // observable on the second /login call.
+        "sso.session.user-roles.enabled=false",
         "eureka.client.enabled=false",
         "spring.cloud.discovery.enabled=false"
 })

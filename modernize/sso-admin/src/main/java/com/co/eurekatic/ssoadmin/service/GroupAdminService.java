@@ -6,6 +6,7 @@ import com.co.eurekatic.common.entity.User;
 import com.co.eurekatic.common.repository.GroupRepository;
 import com.co.eurekatic.common.repository.RoleRepository;
 import com.co.eurekatic.common.repository.UserRepository;
+import com.co.eurekatic.ssoadmin.client.SessionInvalidationClient;
 import com.co.eurekatic.ssoadmin.dto.GroupRequest;
 import com.co.eurekatic.ssoadmin.dto.GroupResponse;
 import com.co.eurekatic.ssoadmin.exception.DuplicateException;
@@ -30,13 +31,16 @@ public class GroupAdminService {
     private final GroupRepository groupRepository;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final SessionInvalidationClient sessionInvalidationClient;
 
     public GroupAdminService(GroupRepository groupRepository,
                              UserRepository userRepository,
-                             RoleRepository roleRepository) {
+                             RoleRepository roleRepository,
+                             SessionInvalidationClient sessionInvalidationClient) {
         this.groupRepository = groupRepository;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
+        this.sessionInvalidationClient = sessionInvalidationClient;
     }
 
     /**
@@ -97,8 +101,14 @@ public class GroupAdminService {
                 .orElseThrow(() -> new NotFoundException("User", userId));
         Group group = groupRepository.findById(groupId)
                 .orElseThrow(() -> new NotFoundException("Group", groupId));
+        boolean alreadyBound = group.getUsers().stream().anyMatch(u -> u.getId().equals(userId));
         group.addUser(user);
         groupRepository.save(group);
+        if (!alreadyBound) {
+            // Joining a group can grant new roles via group_role —
+            // cached role set no longer matches the DB.
+            sessionInvalidationClient.invalidate(user.getEmail());
+        }
     }
 
     /* ====================== bindings: role ====================== */
@@ -109,8 +119,15 @@ public class GroupAdminService {
                 .orElseThrow(() -> new NotFoundException("Group", groupId));
         Role role = roleRepository.findById(roleId)
                 .orElseThrow(() -> new NotFoundException("Role", roleId));
+        boolean alreadyBound = group.getRoles().stream().anyMatch(r -> r.getId().equals(roleId));
         group.addRole(role);
         groupRepository.save(group);
+        if (!alreadyBound) {
+            // Every user in this group now has an extra role
+            // available via user_group -> group_role. Invalidate
+            // every cached role set in the group.
+            invalidateAllInGroup(group);
+        }
     }
 
     @Transactional
@@ -119,8 +136,20 @@ public class GroupAdminService {
                 .orElseThrow(() -> new NotFoundException("Group", groupId));
         Role role = roleRepository.findById(roleId)
                 .orElseThrow(() -> new NotFoundException("Role", roleId));
+        boolean wasBound = group.getRoles().stream().anyMatch(r -> r.getId().equals(roleId));
         group.removeRole(role);
         groupRepository.save(group);
+        if (wasBound) {
+            // Same as bindRole — every cached role set in the
+            // group is now over-claiming the role.
+            invalidateAllInGroup(group);
+        }
+    }
+
+    private void invalidateAllInGroup(Group group) {
+        for (User member : group.getUsers()) {
+            sessionInvalidationClient.invalidate(member.getEmail());
+        }
     }
 
     @Transactional(readOnly = true)

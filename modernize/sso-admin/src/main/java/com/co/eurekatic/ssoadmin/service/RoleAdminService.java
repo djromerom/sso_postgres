@@ -8,6 +8,8 @@ import com.co.eurekatic.ssoadmin.dto.RoleRequest;
 import com.co.eurekatic.ssoadmin.dto.RoleResponse;
 import com.co.eurekatic.ssoadmin.dto.UserResponse;
 import com.co.eurekatic.ssoadmin.exception.NotFoundException;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +23,13 @@ import java.util.stream.Collectors;
  * endpoint/route bindings (Phase 2) — Phase 1 only handles
  * user↔role bindings, which is the only binding table that
  * exists in the schema today.
+ *
+ * <p>Cache coupling: every write here invalidates the
+ * {@code "roles"} Redis cache (the name → id map
+ * {@code MyMenuService.roleIdsFromAuth} consumes via
+ * {@link RoleLookupService}). The TTL on that cache is 5m by
+ * default ({@code sso.admin.roles-cache-ttl}); eviction makes
+ * the new state visible immediately on the next read.
  */
 @Service
 public class RoleAdminService {
@@ -35,11 +44,14 @@ public class RoleAdminService {
 
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
+    private final CacheManager cacheManager;
 
     public RoleAdminService(RoleRepository roleRepository,
-                            UserRepository userRepository) {
+                            UserRepository userRepository,
+                            CacheManager cacheManager) {
         this.roleRepository = roleRepository;
         this.userRepository = userRepository;
+        this.cacheManager = cacheManager;
     }
 
     @Transactional
@@ -48,7 +60,9 @@ public class RoleAdminService {
             throw new IllegalArgumentException("Role already exists: " + req.name());
         }
         Role role = new Role(req.name(), req.description());
-        return RoleResponse.fromEntity(roleRepository.save(role));
+        RoleResponse response = RoleResponse.fromEntity(roleRepository.save(role));
+        evictRolesCache();
+        return response;
     }
 
     @Transactional
@@ -60,7 +74,9 @@ public class RoleAdminService {
                 .orElseThrow(() -> new NotFoundException("Role", req.id()));
         role.setName(req.name());
         role.setDescription(req.description());
-        return RoleResponse.fromEntity(roleRepository.save(role));
+        RoleResponse response = RoleResponse.fromEntity(roleRepository.save(role));
+        evictRolesCache();
+        return response;
     }
 
     @Transactional(readOnly = true)
@@ -112,6 +128,19 @@ public class RoleAdminService {
                         u.getFullName(),
                         memberIds.contains(u.getId())))
                 .toList();
+    }
+
+    /**
+     * Drops the {@code "roles"} Redis cache so the next
+     * {@code MyMenuService} read picks up the new role set.
+     * Key shape doesn't matter — the cache holds the full map
+     * under one entry — so a single {@code clear()} is correct.
+     */
+    private void evictRolesCache() {
+        Cache cache = cacheManager.getCache("roles");
+        if (cache != null) {
+            cache.clear();
+        }
     }
 
     /**

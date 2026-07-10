@@ -2,7 +2,6 @@ package com.co.eurekatic.ssoadmin.service;
 
 import com.co.eurekatic.common.entity.App;
 import com.co.eurekatic.common.repository.AppRepository;
-import com.co.eurekatic.common.repository.RoleRepository;
 import com.co.eurekatic.common.repository.RouteRepository;
 import com.co.eurekatic.ssoadmin.dto.RouteResponse;
 import org.springframework.security.core.Authentication;
@@ -12,8 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Resolves the per-user sidebar menu from the JWT authorities.
@@ -56,14 +55,14 @@ import java.util.stream.Collectors;
 public class MyMenuService {
 
     private final RouteRepository routeRepo;
-    private final RoleRepository roleRepo;
+    private final RoleLookupService roleLookup;
     private final AppRepository appRepo;
 
     public MyMenuService(RouteRepository routeRepo,
-                         RoleRepository roleRepo,
+                         RoleLookupService roleLookup,
                          AppRepository appRepo) {
         this.routeRepo = routeRepo;
-        this.roleRepo = roleRepo;
+        this.roleLookup = roleLookup;
         this.appRepo = appRepo;
     }
 
@@ -82,7 +81,7 @@ public class MyMenuService {
         }
         return routeRepo.findVisibleForRoles(roleIds).stream()
                 .map(RouteResponse::fromEntity)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     /**
@@ -128,16 +127,16 @@ public class MyMenuService {
         }
         return routeRepo.findVisibleForRoles(roleIds, appId).stream()
                 .map(RouteResponse::fromEntity)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     /**
      * Maps {@code ROLE_<NAME>} authorities to role ids by
-     * name. The lookup is O(roles × roles_table); admin-ui
-     * users typically have 2–5 roles, so the constant is
-     * tiny and the in-memory {@code findAll} is fine. If
-     * role counts ever explode, swap this for a batch
-     * {@code findByNameIn(...)} on {@link RoleRepository}.
+     * name. The lookup goes through {@link RoleLookupService},
+     * which caches the full name → id map under Redis
+     * {@code "roles"} so this method no longer triggers a
+     * {@code roleRepo.findAll()} full scan on every
+     * {@code /myMenu} call.
      */
     private Set<Long> roleIdsFromAuth(Authentication auth) {
         if (auth == null) return Set.of();
@@ -149,12 +148,14 @@ public class MyMenuService {
             }
         }
         if (names.isEmpty()) return Set.of();
+        Map<String, Long> allRoles = roleLookup.nameToId();
         Set<Long> ids = new LinkedHashSet<>();
-        roleRepo.findAll().forEach(r -> {
-            if (names.contains(r.getName())) {
-                ids.add(r.getId());
+        for (String name : names) {
+            Long id = allRoles.get(name);
+            if (id != null) {
+                ids.add(id);
             }
-        });
+        }
         return ids;
     }
 }

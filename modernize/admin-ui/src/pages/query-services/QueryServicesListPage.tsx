@@ -1,47 +1,92 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Table, type Column } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import {
+  useCreateMicroservice,
+  useDeleteMicroservice,
+  useMicroservices,
+  useUpdateMicroservice,
+} from "@/hooks/useMicroservices";
+import {
   useQueryServiceStatus,
-  useQueryServices,
   useRestartQueryService,
 } from "@/hooks/useQueryServices";
 import type { MicroserviceResponse } from "@/api/types";
+import type { MicroserviceFormValues } from "@/schemas";
 import { LogsModal } from "./LogsModal";
+import { QueryServiceFormDrawer } from "./QueryServiceFormDrawer";
 
 /**
- * Operations page for `kind=QUERY` microservice rows. Each row
- * is a query-service container running on the host; the
- * provisioner sidecar is the only thing that knows how to talk
- * to the docker socket, so we proxy status / logs / restart
- * through sso-admin.
+ * The one page that fully owns `kind=QUERY` microservices:
+ * CRUD (create/edit/delete, which drives the provisioner sidecar)
+ * AND ops (per-container status / logs / restart). REST
+ * microservices live on their own page at {@code /admin/microservices}.
  *
- * Layout:
- *   - Top: a single panel with the current row count and a
- *     legend for the status colors.
- *   - Body: a table with `Status | Instance | Dialect | JdbcUrl
- *     | StartedAt | Actions`. The Status cell polls every 5s
- *     while non-UP (see {@link useQueryServiceStatus}); UP rows
- *     stop polling because the smart interval returns `false`.
- *   - Footer: a "View logs" modal mounted at the page level
- *     (one modal, not one per row) — we hold the selected row
- *     in state and pass it as a prop.
- *
- * Why a table here instead of cards? The per-row payload
- * (status, instanceName, dialect, startedAt) is small and
- * aligned; cards would waste vertical space and force 1-up
- * scrolling on narrow viewports. The microservice list page
- * uses a table for the same reason.
+ * <p>The list comes from {@link useMicroservices} filtered to
+ * QUERY (not the separate query-services key) so the CRUD
+ * mutations' cache invalidation refreshes this table too. Status
+ * polls per row via {@link useQueryServiceStatus} (5s while
+ * non-UP, idle once running/absent).
  */
 export function QueryServicesListPage() {
-  const services = useQueryServices();
+  const microservices = useMicroservices();
+  const createMs = useCreateMicroservice();
+  const updateMs = useUpdateMicroservice();
+  const deleteMs = useDeleteMicroservice();
   const restart = useRestartQueryService();
   const toast = useToast();
+
+  const [editing, setEditing] = useState<MicroserviceResponse | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<MicroserviceResponse | null>(null);
   const [logsFor, setLogsFor] = useState<MicroserviceResponse | null>(null);
   const [search, setSearch] = useState("");
+
+  const rows = useMemo(
+    () => (microservices.data ?? []).filter((m) => m.kind === "QUERY"),
+    [microservices.data],
+  );
+
+  async function handleSubmit(values: MicroserviceFormValues & { id?: number }) {
+    try {
+      if (values.id) {
+        await updateMs.mutateAsync(values as Parameters<typeof updateMs.mutateAsync>[0]);
+        toast.show("Query service actualizado", "success");
+      } else {
+        await createMs.mutateAsync(values as Parameters<typeof createMs.mutateAsync>[0]);
+        toast.show("Query service creado; aprovisionando…", "success");
+      }
+      setEditing(null);
+      setCreating(false);
+    } catch (err) {
+      // The Form<T> wrapper already toasts the error; keep the
+      // drawer open so the user can fix it.
+      console.error("query service save failed", err);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    await deleteMs.mutateAsync(deleting.id);
+    toast.show("Query service eliminado", "success");
+    setDeleting(null);
+  }
+
+  async function handleRestart(m: MicroserviceResponse) {
+    try {
+      await restart.mutateAsync(m.id);
+      toast.show(`Reinicio solicitado — ${m.instanceName ?? m.serviceId}`, "success");
+    } catch (err) {
+      toast.show(
+        `No se pudo reiniciar ${m.instanceName ?? m.serviceId}: ${(err as Error).message}`,
+        "error",
+      );
+    }
+  }
 
   const columns = useMemo<Column<MicroserviceResponse>[]>(
     () => [
@@ -102,36 +147,31 @@ export function QueryServicesListPage() {
             >
               Reiniciar
             </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setEditing(m)}
+              data-testid={`edit-${m.id}`}
+            >
+              Editar
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => setDeleting(m)}
+              data-testid={`delete-${m.id}`}
+            >
+              Eliminar
+            </Button>
           </div>
         ),
       },
     ],
-    // restart.variables intentionally omitted — we want a stable
-    // memo for the columns; the per-row loading check reads it
-    // fresh on each render.
+    // restart.variables intentionally omitted — the per-row loading
+    // check reads it fresh on each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
-
-  async function handleRestart(m: MicroserviceResponse) {
-    try {
-      await restart.mutateAsync(m.id);
-      toast.show(`Reinicio solicitado — ${m.instanceName ?? m.serviceId}`, "success");
-    } catch (err) {
-      toast.show(
-        `No se pudo reiniciar ${m.instanceName ?? m.serviceId}: ${(err as Error).message}`,
-        "error",
-      );
-    }
-  }
-
-  const rows = services.data ?? [];
-  const running = rows.filter(
-    // Cheap pre-count for the header summary without re-querying
-    // each row's status here. The truthy badge color is what
-    // drives the visual summary.
-    () => true,
-  ).length;
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -153,7 +193,12 @@ export function QueryServicesListPage() {
             ({rows.length} {rows.length === 1 ? "fila" : "filas"})
           </p>
         </div>
-        <Legend />
+        <div className="flex items-center gap-4">
+          <Legend />
+          <Button onClick={() => setCreating(true)} data-testid="new-query-service">
+            + Nuevo query service
+          </Button>
+        </div>
       </header>
 
       <div className="mb-3">
@@ -168,22 +213,52 @@ export function QueryServicesListPage() {
         columns={columns}
         rows={filteredRows}
         rowKey={(m) => m.id}
-        loading={services.isLoading}
+        loading={microservices.isLoading}
         empty={
-          services.isError
-            ? "No se pudo cargar la lista de microservicios. ¿sso-admin está UP?"
+          microservices.isError
+            ? "No se pudo cargar la lista. ¿sso-admin está UP?"
             : search
               ? "Sin resultados."
-              : "Aún no hay microservicios QUERY. Crea uno desde Microservicios."
+              : "Aún no hay query services. Crea uno con el botón de arriba."
         }
       />
 
-      <LogsModal microservice={logsFor} onClose={() => setLogsFor(null)} />
+      <QueryServiceFormDrawer
+        open={creating || editing !== null}
+        microservice={editing}
+        onClose={() => {
+          setCreating(false);
+          setEditing(null);
+        }}
+        onSubmit={handleSubmit}
+      />
 
-      {/* running is computed for future use (e.g. a "all UP" header
-          chip). Referencing it keeps TS happy and makes the diff
-          minimal when we add the badge. */}
-      <span className="sr-only">{running} query services listed</span>
+      <Modal
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        title="Eliminar query service"
+        description={`¿Seguro que quieres eliminar "${deleting?.serviceId}"? Esta acción no se puede deshacer.`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleting(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              loading={deleteMs.isPending}
+              onClick={() => void confirmDelete()}
+            >
+              Eliminar
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-600">
+          Esto también des-aprovisiona el contenedor asociado vía el sidecar.
+        </p>
+      </Modal>
+
+      <LogsModal microservice={logsFor} onClose={() => setLogsFor(null)} />
     </section>
   );
 }

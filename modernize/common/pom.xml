@@ -62,6 +62,23 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!--
+            OpenTelemetry Logback appender — the bridge that ships
+            every log event to the OTLP collector (Grafana Alloy in
+            this stack). Spring Boot 4's spring-boot-starter-opentelemetry
+            does NOT include this dependency transitively (Spring Boot
+            issue #50251 is the open tracking ticket). Without it,
+            the OTLP logs exporter configured via
+            management.opentelemetry.logging.export.otlp.endpoint has
+            no appender to feed and Loki stays empty.
+            Version pinned in the parent <properties> (see comment there).
+        -->
+        <dependency>
+            <groupId>io.opentelemetry.instrumentation</groupId>
+            <artifactId>opentelemetry-logback-appender-1.0</artifactId>
+            <version>${opentelemetry-instrumentation.version}</version>
+        </dependency>
+
         <!-- Test scope: H2 to exercise JPA mappings without a real Postgres -->
         <dependency>
             <groupId>com.h2database</groupId>

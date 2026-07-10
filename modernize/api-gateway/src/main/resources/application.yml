@@ -282,33 +282,46 @@ management:
 
   # ---------------------------------------------------------------------------
   # Observability — pure OTLP. Metrics, traces and logs are all pushed
-  # to the Grafana Alloy collector; there is no /actuator/prometheus
-  # scrape endpoint. Alloy fans out to Mimir / Tempo / Loki.
+  # to the Grafana Alloy collector. Alloy fans out to Mimir / Tempo / Loki.
   #
   # The endpoint defaults to the OTEL_EXPORTER_OTLP_ENDPOINT env var
   # (set to http://alloy:4318 in docker-compose), falling back to
   # localhost:4318 for a developer running Alloy on the host.
+  #
+  # Spring Boot 4 naming (per the official 2025-11-18 Spring blog):
+  #   metrics  -> management.otlp.metrics.export.url
+  #   tracing  -> management.opentelemetry.tracing.export.otlp.endpoint
+  #   logs     -> management.opentelemetry.logging.export.otlp.endpoint
+  # The old `management.otlp.tracing.endpoint` /
+  # `management.otlp.logs.export.endpoint` namespaces are silently
+  # ignored in Boot 4 — the app would boot, but no traces or logs
+  # would ever reach Alloy and Tempo/Loki would stay empty.
   # ---------------------------------------------------------------------------
   otlp:
     metrics:
       export:
         url: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/metrics
         step: 10s
+  opentelemetry:
     tracing:
-      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
     logging:
-      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/logs
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/logs
+    # Resource attributes attached to every metric/trace/log so Grafana
+    # can group by service. service.name comes from spring.application.name.
+    resource-attributes:
+      service.namespace: sso
+      deployment.environment: ${DEPLOY_ENV:dev}
   tracing:
+    enabled: true
     sampling:
       # 100% in dev so every request shows a trace. Lower to e.g. 0.1
       # in production to cap trace volume.
       probability: ${OTEL_TRACING_SAMPLE_RATE:1.0}
-  # Resource attributes attached to every metric/trace/log so Grafana
-  # can group by service. service.name comes from spring.application.name.
-  opentelemetry:
-    resource-attributes:
-      service.namespace: sso
-      deployment.environment: ${DEPLOY_ENV:dev}
 
 logging:
   level:

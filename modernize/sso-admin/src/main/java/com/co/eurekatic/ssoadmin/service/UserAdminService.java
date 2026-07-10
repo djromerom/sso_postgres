@@ -5,6 +5,7 @@ import com.co.eurekatic.common.entity.User;
 import com.co.eurekatic.common.entity.User.UserStatus;
 import com.co.eurekatic.common.repository.RoleRepository;
 import com.co.eurekatic.common.repository.UserRepository;
+import com.co.eurekatic.ssoadmin.client.SessionInvalidationClient;
 import com.co.eurekatic.ssoadmin.config.EmailProperties;
 import com.co.eurekatic.ssoadmin.dto.CreateAccountRequest;
 import com.co.eurekatic.ssoadmin.dto.UpdateAccountRequest;
@@ -16,6 +17,8 @@ import com.co.eurekatic.ssoadmin.exception.NotFoundException;
 import com.co.eurekatic.ssoadmin.exception.UserDuplicateException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -85,6 +88,8 @@ public class UserAdminService {
     private final EmailService emailService;
     private final EmailProperties emailProps;
     private final NotificationEventPublisher events;
+    private final SessionInvalidationClient sessionInvalidationClient;
+    private final CacheManager cacheManager;
 
     public UserAdminService(UserRepository userRepository,
                             RoleRepository roleRepository,
@@ -92,7 +97,9 @@ public class UserAdminService {
                             TokenService tokenService,
                             EmailService emailService,
                             EmailProperties emailProps,
-                            NotificationEventPublisher events) {
+                            NotificationEventPublisher events,
+                            SessionInvalidationClient sessionInvalidationClient,
+                            CacheManager cacheManager) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
@@ -100,6 +107,8 @@ public class UserAdminService {
         this.emailService = emailService;
         this.emailProps = emailProps;
         this.events = events;
+        this.sessionInvalidationClient = sessionInvalidationClient;
+        this.cacheManager = cacheManager;
     }
 
     /**
@@ -149,6 +158,14 @@ public class UserAdminService {
         tokenService.issueActivationToken(user);
         User saved = userRepository.save(user);
         publishActivationEmail(saved);
+        // Roles were just attached — drop the (currently empty)
+        // cache entry so the activation flow sees them on first
+        // login. Until activation the user is enabled=false and
+        // cannot log in, so this is technically a no-op, but it
+        // keeps the invalidation rule simple: any role change
+        // invalidates, period.
+        sessionInvalidationClient.invalidate(saved.getEmail());
+        evictUserByEmailCache(saved.getEmail());
 
         log.info("Created user '{}' (active=true, enabled=false, pending activation)",
                 saved.getEmail());
@@ -276,6 +293,14 @@ public class UserAdminService {
         }
 
         User saved = userRepository.save(user);
+        if (req.roleNames() != null) {
+            // Roles just changed — drop the cache so the next
+            // /login (or /auth/refresh) re-reads the new set
+            // instead of handing out the old one for the rest
+            // of the TTL window.
+            sessionInvalidationClient.invalidate(saved.getEmail());
+            evictUserByEmailCache(saved.getEmail());
+        }
 
         if (req.active() != null && !req.active()) {
             publishAccountDeactivated(saved, "Disabled via admin update");
@@ -397,6 +422,11 @@ public class UserAdminService {
         User saved = userRepository.save(user);
         if (!alreadyBound) {
             publishRoleAssigned(saved, role.getName());
+            // New role granted — the cached role set no longer
+            // matches the DB. Drop it so the next login mints a
+            // JWT that includes the new role.
+            sessionInvalidationClient.invalidate(saved.getEmail());
+            evictUserByEmailCache(saved.getEmail());
         }
     }
 
@@ -420,6 +450,10 @@ public class UserAdminService {
         User saved = userRepository.save(user);
         if (removedRoleName != null) {
             publishRoleRevoked(saved, removedRoleName);
+            // Role revoked — cached role set now over-claims the
+            // user's authorities. Drop it.
+            sessionInvalidationClient.invalidate(saved.getEmail());
+            evictUserByEmailCache(saved.getEmail());
         }
     }
 
@@ -444,6 +478,21 @@ public class UserAdminService {
             result.add(role);
         }
         return result;
+    }
+
+    // ---- cache helpers ----------------------------------------
+
+    /**
+     * Evicts the {@code "user-by-email"} Redis cache for the
+     * given email so the next {@code QueryCatalogService} call
+     * re-reads the user's current role set instead of using the
+     * stale cached projection.
+     */
+    private void evictUserByEmailCache(String email) {
+        Cache cache = cacheManager.getCache("user-by-email");
+        if (cache != null) {
+            cache.evict(email);
+        }
     }
 
     // ---- notification helpers -------------------------------------

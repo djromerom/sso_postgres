@@ -81,6 +81,11 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect",
         // Keep the JWT secret stable and long enough for HS256
         "sso.jwt.secret=integration-test-secret-which-is-at-least-32-bytes-long-1234567890",
+        // Disable the user-roles cache so reseeding the user table
+        // between tests doesn't fight a stale Redis entry. The
+        // integration test asserts login + JWT shape; the cache
+        // is exercised by the dedicated CachedEffectiveRolesResolverTest.
+        "sso.session.user-roles.enabled=false",
         // Don't try to register with Eureka
         "eureka.client.enabled=false",
         "spring.cloud.discovery.enabled=false"

@@ -1,0 +1,25 @@
+# This file must stay LF.
+.gitattributes text eol=lf
+
+# Force LF line endings for SQL migrations (Flyway expects Unix EOL).
+*.sql text eol=lf
+
+# Shell scripts must stay LF for bash/sh.
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Config files that run inside Linux containers.
+*.yml text eol=lf
+*.yaml text eol=lf
+*.properties text eol=lf
+
+# Alloy / Loki / Tempo / Mimir configs.
+*.alloy text eol=lf
+*.json text eol=lf
+
+
+# Docker.
+Dockerfile* text eol=lf
+.dockerignore text eol=lf
+docker-compose*.yml text eol=lf
+

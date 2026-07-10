@@ -36,10 +36,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
-        <!-- Prometheus scrape endpoint. Version resolved by Boot 4 BOM. Exposed via /actuator/prometheus for the Grafana Alloy scraper. -->
+        <!-- Observability: pure-OTLP export via the single Boot 4 starter. -->
         <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-registry-prometheus</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-opentelemetry</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry.instrumentation</groupId>
+            <artifactId>opentelemetry-logback-appender-1.0</artifactId>
+            <version>${opentelemetry-instrumentation.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

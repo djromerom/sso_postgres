@@ -120,7 +120,19 @@ public class SecurityConfig {
                         // rationale as /actuator/health: scrapers are
                         // inside the trust boundary, not the public internet.
                         .requestMatchers("/actuator/health", "/actuator/health/**",
-                                "/actuator/info", "/actuator/prometheus").permitAll()
+                                "/actuator/info").permitAll()
+                        // /internal/cache/* is called by sso-admin after a
+                        // role / group binding mutation to invalidate the
+                        // auth-center's cached role set. The endpoint is
+                        // not behind JWT auth — it gates itself with a
+                        // shared-secret header (X-Session-Cache-Secret),
+                        // because sso-admin's JWT only proves the
+                        // caller's identity, not that the caller has a
+                        // legitimate reason to drop another user's
+                        // cache entry. The docker network is the trust
+                        // boundary that keeps the endpoint off the
+                        // public internet.
+                        .requestMatchers("/internal/cache/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAt(loginFilter, UsernamePasswordAuthenticationFilter.class)

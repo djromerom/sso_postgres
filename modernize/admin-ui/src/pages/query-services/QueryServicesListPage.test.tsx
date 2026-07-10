@@ -96,7 +96,7 @@ describe("QueryServicesListPage", () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse([])); // getMicroservices
     renderPage();
     expect(
-      await screen.findByText(/Crea uno desde Microservicios/i),
+      await screen.findByText(/Aún no hay query services/i),
     ).toBeInTheDocument();
     // The page must NOT call /container/status when the list is empty
     // (each row's hook is `enabled: id != null`, and id is null until
@@ -216,5 +216,47 @@ describe("QueryServicesListPage", () => {
     const cell = await screen.findByTestId("status-cell-5");
     expect(cell).toHaveTextContent(/PROVISIONING/);
     expect(cell.querySelector("[data-state='provisioning']")).toBeInTheDocument();
+  });
+
+  it("creates a QUERY service via the drawer, POSTing kind=QUERY to /microservice/save", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse([])); // empty list
+    const createdRow = mkMs({ id: 1, serviceId: "diag-svc", instanceName: "diag" });
+    fetchSpy.mockResolvedValue(jsonResponse(createdRow)); // save + any refetch
+
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByTestId("new-query-service"));
+
+    // The drawer is QUERY-only: no REST/QUERY radio selector.
+    expect(screen.queryByRole("radio", { name: /Query service/i })).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/Service ID/i), "diag-svc");
+    await user.type(screen.getByLabelText(/Request URI/i), "/api/diag/**");
+    await user.selectOptions(screen.getByLabelText(/Dialecto/i), "postgres");
+    await user.type(screen.getByLabelText(/JDBC URL/i), "jdbc:postgresql://x/y");
+    await user.type(screen.getByLabelText(/DB username/i), "u");
+    await user.type(screen.getByLabelText(/Instance name/i), "diag");
+
+    await user.click(screen.getByRole("button", { name: /Crear/i }));
+
+    await waitFor(() => {
+      const saveCall = fetchSpy.mock.calls.find(
+        ([url, init]) =>
+          typeof url === "string" &&
+          url.includes("/sso-admin/microservice/save") &&
+          (init as RequestInit | undefined)?.method === "POST",
+      );
+      expect(saveCall).toBeDefined();
+    });
+
+    const saveCall = fetchSpy.mock.calls.find(
+      ([url]) => typeof url === "string" && url.includes("/sso-admin/microservice/save"),
+    );
+    const body = JSON.parse((saveCall![1] as RequestInit).body as string);
+    expect(body.kind).toBe("QUERY");
+    expect(body.serviceId).toBe("diag-svc");
+    expect(body.dialect).toBe("postgres");
+    expect(body.instanceName).toBe("diag");
   });
 });

@@ -1,20 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Local copy of the shared logback config in `common`. The eurekaserver
+  does not depend on `common`, so it cannot inherit the shared config
+  from the classpath. Kept in lockstep with the versions in
+  common/src/main/resources/logback-spring.xml and
+  provisioner/src/main/resources/logback-spring.xml — if you change one,
+  change the other two.
+
+  - The OTEL appender forwards every log event as an OTLP log record to
+    the Grafana Alloy collector. The exporter endpoint is picked up from
+    management.opentelemetry.logging.export.otlp.endpoint (set in
+    application.yml). The OpenTelemetry instance is installed by
+    OpenTelemetryAppenderConfig#afterPropertiesSet, which runs before any
+    application code logs anything.
+
+  - CONSOLE is kept so container `docker compose logs <svc>` still works.
+-->
 <configuration>
-    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 
-    <property name="LOG_PATTERN"
-              value="%clr(%d{${LOG_DATEFORMAT_PATTERN:-yyyy-MM-dd'T'HH:mm:ss.SSSXXX}}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}"/>
+  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+  <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
 
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>${LOG_PATTERN}</pattern>
-            <charset>${LOG_CHARSET:-UTF-8}</charset>
-        </encoder>
-    </appender>
+  <appender name="OTEL" class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender"/>
 
-    <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
-    </root>
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+    <appender-ref ref="OTEL"/>
+  </root>
 
-    <logger name="com.co.eurekatic" level="INFO"/>
 </configuration>

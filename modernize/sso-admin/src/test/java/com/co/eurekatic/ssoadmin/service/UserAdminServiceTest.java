@@ -4,6 +4,7 @@ import com.co.eurekatic.common.entity.Role;
 import com.co.eurekatic.common.entity.User;
 import com.co.eurekatic.common.repository.RoleRepository;
 import com.co.eurekatic.common.repository.UserRepository;
+import com.co.eurekatic.ssoadmin.client.SessionInvalidationClient;
 import com.co.eurekatic.ssoadmin.config.EmailProperties;
 import com.co.eurekatic.ssoadmin.dto.CreateAccountRequest;
 import com.co.eurekatic.ssoadmin.dto.UpdateAccountRequest;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.cache.CacheManager;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
@@ -54,6 +56,8 @@ class UserAdminServiceTest {
     @Mock TokenService tokenService;
     @Mock EmailService emailService;
     @Mock NotificationEventPublisher events;
+    @Mock SessionInvalidationClient sessionInvalidationClient;
+    @Mock CacheManager cacheManager;
 
     UserAdminService service;
 
@@ -80,7 +84,7 @@ class UserAdminServiceTest {
                 "restore-password-account.html");
         service = new UserAdminService(userRepository, roleRepository,
                 passwordEncoder, tokenService, emailService,
-                emailProps, events);
+                emailProps, events, sessionInvalidationClient, cacheManager);
     }
 
     /* ====================== createAccount ====================== */

@@ -121,6 +121,7 @@ function buildFetchSpy(opts: {
   queries: QueryAdminResponse[];
   microservices: MicroserviceResponse[];
   rolesForId?: Record<number, QueryRoleChecked[]>;
+  executeResult?: { status: number; body: unknown; isError?: boolean };
 }) {
   const fetchSpy = vi.fn((url: string | URL | Request, init?: RequestInit) => {
     const u = typeof url === "string" ? url : url.toString();
@@ -130,6 +131,23 @@ function buildFetchSpy(opts: {
     }
     if (method === "GET" && u.includes("/sso-admin/query/getQueries")) {
       return Promise.resolve(jsonResponse(opts.queries));
+    }
+    // Query execution — POST /query-service[-<instance>]/query
+    // (no /sso-admin prefix; the apiClient `base: ""` override).
+    if (method === "POST" && u.includes("/query-service") && u.endsWith("/query")) {
+      if (opts.executeResult?.isError) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              code: "BAD",
+              message: opts.executeResult.body as string,
+              timestamp: "",
+            }),
+            { status: opts.executeResult.status, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      return Promise.resolve(jsonResponse(opts.executeResult?.body ?? []));
     }
     // Role toggles (POST or DELETE) and the role-checked fetch
     const roleToggleMatch = u.match(/\/sso-admin\/query\/(\d+)\/role\/(\d+)$/);
@@ -361,5 +379,86 @@ describe("QueriesAdminPage", () => {
     );
     const call = findFetchCall(spy, "/sso-admin/query/33")!;
     expect((call[1] as RequestInit).method).toBe("DELETE");
+  });
+
+  it("clicking 'Ejecutar' opens the drawer with the SQL and a param input", async () => {
+    const pg = mkMs({ id: 1, instanceName: "pg" });
+    const q = mkQuery({
+      id: 7,
+      uuid: "q-param",
+      query: "SELECT * FROM t WHERE id = :id AND name = :name",
+      microserviceId: 1,
+    });
+    const spy = buildFetchSpy({ queries: [q], microservices: [pg] });
+    vi.stubGlobal("fetch", spy);
+
+    renderPage();
+    await userEvent.click(await screen.findByTestId("execute-7"));
+
+    expect(
+      await screen.findByRole("dialog", { name: /Ejecutar consulta q-param/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("param-id")).toBeInTheDocument();
+    expect(screen.getByTestId("param-name")).toBeInTheDocument();
+    expect(screen.getByTestId("run-execute")).toBeInTheDocument();
+  });
+
+  it("submitting Execute POSTs to /query-service-<instance>/query and renders the result", async () => {
+    const pg = mkMs({ id: 1, instanceName: "pg-prod" });
+    const q = mkQuery({
+      id: 7,
+      uuid: "q-param",
+      query: "SELECT id, name FROM t WHERE id = :id",
+      microserviceId: 1,
+    });
+    const execResult = [{ id: 1, name: "alice" }, { id: 2, name: "bob" }];
+    const spy = buildFetchSpy({
+      queries: [q],
+      microservices: [pg],
+      executeResult: { status: 200, body: execResult },
+    });
+    vi.stubGlobal("fetch", spy);
+
+    renderPage();
+    await userEvent.click(await screen.findByTestId("execute-7"));
+    await userEvent.type(screen.getByTestId("param-id"), "1");
+    await userEvent.click(screen.getByTestId("run-execute"));
+
+    await waitFor(() =>
+      expect(findFetchCall(spy, "/query-service-pg-prod/query")).toBeDefined(),
+    );
+    const execCall = findFetchCall(spy, "/query-service-pg-prod/query")!;
+    const bodyArg = JSON.parse((execCall[1] as RequestInit).body as string);
+    expect(bodyArg).toEqual({ uuid: "q-param", params: { id: "1" } });
+
+    expect(await screen.findByText("2 fila(s) devueltas")).toBeInTheDocument();
+    expect(screen.getByText("alice")).toBeInTheDocument();
+    expect(screen.getByText("bob")).toBeInTheDocument();
+  });
+
+  it("uses the canonical /query-service/query path for a global query (no microserviceId)", async () => {
+    const globalQ = mkQuery({
+      id: 42,
+      uuid: "q-global",
+      query: "SELECT 1",
+      microserviceId: null,
+    });
+    const spy = buildFetchSpy({
+      queries: [globalQ],
+      microservices: [],
+      executeResult: { status: 200, body: [{ "?column?": 1 }] },
+    });
+    vi.stubGlobal("fetch", spy);
+
+    renderPage();
+    await userEvent.click(await screen.findByTestId("execute-42"));
+    await userEvent.click(screen.getByTestId("run-execute"));
+
+    await waitFor(() =>
+      expect(findFetchCall(spy, "/query-service/query")).toBeDefined(),
+    );
+    expect(
+      screen.getByText(/Instancia: query-service \(canónica\)/i),
+    ).toBeInTheDocument();
   });
 });

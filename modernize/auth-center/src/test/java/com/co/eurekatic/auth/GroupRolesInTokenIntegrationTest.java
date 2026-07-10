@@ -52,6 +52,10 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect",
         "sso.jwt.secret=integration-test-secret-which-is-at-least-32-bytes-long-1234567890",
+        // Group-roles-in-token assertion needs the resolver to
+        // actually load the user-group-role chain — the cache
+        // short-circuits that path.
+        "sso.session.user-roles.enabled=false",
         "eureka.client.enabled=false",
         "spring.cloud.discovery.enabled=false"
 })

@@ -33,7 +33,6 @@ import type {
   MicroserviceTestConnectionResponse,
   QueryAdminRequest,
   QueryAdminResponse,
-  QueryDefinition,
   QueryExecutionRequest,
   QueryExecutionResponse,
   QueryRoleChecked,
@@ -223,15 +222,7 @@ export const routesApi = {
     apiClient.get<RouteRoleChecked[]>(`/sso-admin/route/${id}/roles/checked`),
 };
 
-/* ====================== queries catalog (consumer-facing) ======================
- *
- * Two surfaces:
- *
- *  - `listForInstance` — consumer-facing catalog list via
- *    /sso-admin/myQueries (authenticated, per-row role
- *    authorization). The admin CRUD surface is /query/getQueries
- *    and is gated by ROLE_ADMIN; we deliberately do not call
- *    it here.
+/* ====================== query execution ======================
  *
  *  - `execute` — POST directly to the query-service instance
  *    backing the chosen microservice. The path is
@@ -264,13 +255,6 @@ export const queryAdminApi = {
 };
 
 export const queriesApi = {
-  listForInstance: (microserviceId: number | null) =>
-    apiClient.get<QueryDefinition[]>(
-      microserviceId == null
-        ? "/sso-admin/myQueries"
-        : `/sso-admin/myQueries?microserviceId=${microserviceId}`,
-    ),
-
   execute: (instanceName: string | null, body: QueryExecutionRequest) => {
     // instanceName === null is the legacy single-instance case
     // (the canonical "query-service" service id registered with

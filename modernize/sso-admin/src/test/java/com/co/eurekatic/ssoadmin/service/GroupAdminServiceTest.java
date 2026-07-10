@@ -4,6 +4,7 @@ import com.co.eurekatic.common.entity.Group;
 import com.co.eurekatic.common.entity.User;
 import com.co.eurekatic.common.repository.GroupRepository;
 import com.co.eurekatic.common.repository.UserRepository;
+import com.co.eurekatic.ssoadmin.client.SessionInvalidationClient;
 import com.co.eurekatic.ssoadmin.dto.GroupRequest;
 import com.co.eurekatic.ssoadmin.dto.GroupResponse;
 import com.co.eurekatic.ssoadmin.exception.NotFoundException;
@@ -26,6 +27,7 @@ class GroupAdminServiceTest {
 
     @Mock GroupRepository groupRepository;
     @Mock UserRepository userRepository;
+    @Mock SessionInvalidationClient sessionInvalidationClient;
     @InjectMocks GroupAdminService service;
 
     @Test

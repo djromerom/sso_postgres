@@ -1,17 +1,14 @@
 package com.co.eurekatic.ssoadmin.service;
 
 import com.co.eurekatic.common.entity.Query;
-import com.co.eurekatic.common.entity.Role;
-import com.co.eurekatic.common.entity.User;
 import com.co.eurekatic.common.repository.QueryRepository;
-import com.co.eurekatic.common.repository.UserRepository;
 import com.co.eurekatic.ssoadmin.dto.QueryDefinition;
+import com.co.eurekatic.ssoadmin.service.UserLookupService.UserRolesView;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -44,17 +41,22 @@ import java.util.stream.Collectors;
  * authenticated caller may resolve it. Captcha is still enforced
  * downstream by {@code query-service} when the
  * {@code QueryDefinition#captcha()} flag is true.
+ *
+ * <p>Caller authorization now goes through {@link UserLookupService}
+ * (Redis-backed {@code @Cacheable("user-by-email")}), eliminating the
+ * N+1 {@code userRepo.findByEmail} + EAGER roles load that this
+ * service used to fire on every catalog row.
  */
 @Service
 public class QueryCatalogService {
 
     private final QueryRepository queryRepo;
-    private final UserRepository userRepo;
+    private final UserLookupService userLookup;
 
     public QueryCatalogService(QueryRepository queryRepo,
-                               UserRepository userRepo) {
+                               UserLookupService userLookup) {
         this.queryRepo = queryRepo;
-        this.userRepo = userRepo;
+        this.userLookup = userLookup;
     }
 
     /**
@@ -117,27 +119,19 @@ public class QueryCatalogService {
     /**
      * Per-row authorization: the user's roles must intersect the
      * query's bound roles. The email → roles lookup goes
-     * through {@code userRepo} (which loads {@code User.roles}
-     * EAGER — see {@code User.java}) so no lazy issue here.
-     *
-     * <p>Reused by {@link #resolve(String, String)} and
-     * {@link #listForCaller(String, Long)} so the auth model stays
-     * in one place. ADMIN bypass happens upstream of this method —
-     * callers check {@link #hasAdminRole(String)} first.
+     * through {@link UserLookupService} (Redis-backed
+     * {@code @Cacheable("user-by-email")}) instead of a fresh
+     * {@code userRepo.findByEmail} + EAGER roles hit per row.
      */
     private boolean userHasAccessTo(Query q, String email) {
-        Set<String> userRoles = userRepo.findByEmail(email)
-                .map(u -> u.getRoles().stream()
-                        .map(Role::getName)
-                        .collect(Collectors.toSet()))
-                .orElse(Set.of());
-        if (userRoles.isEmpty()) {
+        UserRolesView user = userLookup.rolesFor(email);
+        if (user.roles().isEmpty()) {
             return false;
         }
         Set<String> queryRoles = q.getRoles().stream()
-                .map(Role::getName)
+                .map(com.co.eurekatic.common.entity.Role::getName)
                 .collect(Collectors.toSet());
-        return userRoles.stream().anyMatch(queryRoles::contains);
+        return user.roles().stream().anyMatch(queryRoles::contains);
     }
 
     /**
@@ -152,9 +146,6 @@ public class QueryCatalogService {
      * escalation for a deleted user.
      */
     private boolean hasAdminRole(String email) {
-        Optional<User> userOpt = userRepo.findByEmail(email);
-        if (userOpt.isEmpty()) return false;
-        return userOpt.get().getRoles().stream()
-                .anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getName()));
+        return userLookup.rolesFor(email).hasRole("ADMIN");
     }
 }

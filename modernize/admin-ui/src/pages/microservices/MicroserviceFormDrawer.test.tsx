@@ -5,16 +5,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ToastProvider } from "@/components/ui/Toast";
 import { MicroservicesListPage } from "./MicroservicesListPage";
 import { apiClient } from "@/api/client";
+import type { MicroserviceResponse } from "@/api/types";
 
 /**
- * End-to-end repro of the user's bug report: navigate to
- * /admin/microservices, click "+ Nuevo", pick "Query service",
- * fill the QUERY-only fields, click "Crear", and inspect
- * what's actually PUT on the wire.
- *
- * If this test passes, the frontend is correct and the bug
- * is somewhere else (cached browser dist, backend service,
- * etc.). If it fails, the bug is reproducible in code.
+ * The microservices page is REST-only after the QUERY split:
+ * QUERY services (and their drawer) live on the Query Services
+ * page. These tests assert the REST create flow and that QUERY
+ * rows never leak into this table.
  */
 function renderPage() {
   const qc = new QueryClient({
@@ -32,6 +29,27 @@ function renderPage() {
   );
 }
 
+function mkMs(over: Partial<MicroserviceResponse> = {}): MicroserviceResponse {
+  return {
+    id: 1,
+    serviceId: "orders",
+    description: "orders api",
+    requestUri: "/api/orders/**",
+    targetUriPath: "/v1",
+    targetUrlHost: "orders.internal",
+    targetUrlPort: "8080",
+    createdDate: "2026-06-26T00:00:00Z",
+    kind: "REST",
+    dialect: null,
+    jdbcUrl: null,
+    dbUsername: null,
+    dbPassword: null,
+    poolSize: null,
+    instanceName: null,
+    ...over,
+  };
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -39,15 +57,12 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-describe("MicroservicesListPage — kind=QUERY end-to-end", () => {
+describe("MicroservicesListPage — REST-only", () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    // Wire the apiClient to a real-ish auth token so it doesn't
-    // try to refresh on 401.
     apiClient.setAccessTokenGetter(() => "test-jwt");
     apiClient.setAuthFailureHandler(() => {});
-
     fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
   });
@@ -55,52 +70,26 @@ describe("MicroservicesListPage — kind=QUERY end-to-end", () => {
     vi.unstubAllGlobals();
   });
 
-  it("POSTs kind=QUERY to /sso-admin/microservice/save when the user picks Query service", async () => {
-    // Initial list call (empty)
-    fetchSpy.mockResolvedValueOnce(jsonResponse([]));
-    // The save call
-    const createdRow = {
-      id: 1,
-      serviceId: "diag-svc",
-      description: "",
-      requestUri: "/api/diag/**",
-      targetUriPath: "",
-      targetUrlHost: "",
-      targetUrlPort: "",
-      createdDate: "2026-06-26T00:00:00Z",
-      kind: "QUERY",
-      dialect: "postgres",
-      jdbcUrl: "jdbc:postgresql://x/y",
-      dbUsername: "u",
-      dbPassword: null,
-      poolSize: 10,
-      instanceName: "diag",
-    };
-    fetchSpy.mockResolvedValueOnce(jsonResponse(createdRow));
+  it("POSTs kind=REST to /sso-admin/microservice/save with the routing fields", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse([])); // initial empty list
+    fetchSpy.mockResolvedValue(jsonResponse(mkMs({ id: 1, serviceId: "diag-svc" }))); // save + refetch
 
     const user = userEvent.setup();
     renderPage();
 
-    // Open the create drawer
     await user.click(screen.getByRole("button", { name: /Nuevo microservicio/i }));
 
-    // Pick Query service
-    await user.click(screen.getByRole("radio", { name: /Query service/i }));
+    // REST-only drawer: no kind selector.
+    expect(screen.queryByRole("radio", { name: /Query service/i })).not.toBeInTheDocument();
 
-    // Required REST-base fields
     await user.type(screen.getByLabelText(/Service ID/i), "diag-svc");
     await user.type(screen.getByLabelText(/Request URI/i), "/api/diag/**");
+    await user.type(screen.getByLabelText(/Target host/i), "diag.internal");
+    await user.type(screen.getByLabelText(/Target port/i), "9000");
+    await user.type(screen.getByLabelText(/Target path/i), "/v1");
 
-    // QUERY-only fields
-    await user.selectOptions(screen.getByLabelText(/Dialecto/i), "postgres");
-    await user.type(screen.getByLabelText(/JDBC URL/i), "jdbc:postgresql://x/y");
-    await user.type(screen.getByLabelText(/DB username/i), "u");
-    await user.type(screen.getByLabelText(/Instance name/i), "diag");
-
-    // Submit
     await user.click(screen.getByRole("button", { name: /Crear/i }));
 
-    // Wait for the save POST
     await waitFor(() => {
       const saveCall = fetchSpy.mock.calls.find(
         ([url, init]) =>
@@ -112,59 +101,29 @@ describe("MicroservicesListPage — kind=QUERY end-to-end", () => {
     });
 
     const saveCall = fetchSpy.mock.calls.find(
-      ([url]) =>
-        typeof url === "string" && url.includes("/sso-admin/microservice/save"),
+      ([url]) => typeof url === "string" && url.includes("/sso-admin/microservice/save"),
     );
-    const init = saveCall![1] as RequestInit;
-    const body = JSON.parse(init.body as string);
-
-    // The smoking gun
-    expect(body.kind).toBe("QUERY");
-    // Belt-and-suspenders
+    const body = JSON.parse((saveCall![1] as RequestInit).body as string);
+    expect(body.kind).toBe("REST");
     expect(body.serviceId).toBe("diag-svc");
-    expect(body.dialect).toBe("postgres");
-    expect(body.instanceName).toBe("diag");
-
-    // Echo the wire payload to the test log so the user can
-    // confirm what's actually being sent on the wire.
-    // eslint-disable-next-line no-console
-    console.log("\n>>> wire payload:\n" + JSON.stringify(body, null, 2));
+    expect(body.targetUrlHost).toBe("diag.internal");
+    expect(body.targetUrlPort).toBe("9000");
   });
 
-  it("renders inline QUERY operations for provisioned microservices", async () => {
-    const queryRow = {
-      id: 7,
-      serviceId: "query-oracle-dev",
-      description: "dev oracle",
-      requestUri: "/api/queries/**",
-      targetUriPath: "",
-      targetUrlHost: "",
-      targetUrlPort: "",
-      createdDate: "2026-06-26T00:00:00Z",
+  it("lists REST rows and filters out QUERY services", async () => {
+    const rest = mkMs({ id: 1, serviceId: "orders" });
+    const query = mkMs({
+      id: 2,
+      serviceId: "q-oracle",
       kind: "QUERY",
       dialect: "oracle",
       jdbcUrl: "jdbc:oracle:thin:@db:1521/ORCLPDB1",
-      dbUsername: "query",
-      dbPassword: null,
-      poolSize: 10,
       instanceName: "oracle-dev",
-    };
-    fetchSpy.mockResolvedValueOnce(jsonResponse([queryRow]));
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse({
-        state: "running",
-        rawState: "running",
-        containerId: "abc123",
-        startedAt: "2026-06-24T10:00:00.000Z",
-        fullName: "query-service-oracle-dev",
-      }),
-    );
+    });
+    fetchSpy.mockResolvedValue(jsonResponse([rest, query]));
 
     renderPage();
-
-    expect(await screen.findByText(/Servicios QUERY/i)).toBeInTheDocument();
-    expect(await screen.findByTestId("status-cell-7")).toHaveTextContent(/UP/i);
-    expect(screen.getByTestId("view-logs-7")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Reiniciar/i })).toBeInTheDocument();
+    expect(await screen.findByText("orders")).toBeInTheDocument();
+    expect(screen.queryByText("q-oracle")).not.toBeInTheDocument();
   });
 });

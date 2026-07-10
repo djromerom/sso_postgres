@@ -8,6 +8,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,6 +49,7 @@ class TokenServiceTest {
         TokenService svc = new TokenService(userRepository);
         User u = new User();
         u.setTokenActivation("tok");
+        u.setTokenActivationExpiresAt(Instant.now().plus(1, ChronoUnit.HOURS));
 
         when(userRepository.findByTokenActivation("tok")).thenReturn(Optional.of(u));
 
@@ -70,6 +73,7 @@ class TokenServiceTest {
         TokenService svc = new TokenService(userRepository);
         User u = new User();
         u.setTokenRestore("rtok");
+        u.setTokenRestoreExpiresAt(Instant.now().plus(1, ChronoUnit.HOURS));
 
         when(userRepository.findByTokenRestore("rtok")).thenReturn(Optional.of(u));
 
