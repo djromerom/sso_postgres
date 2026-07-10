@@ -5,10 +5,17 @@ import { Form, zodFieldErrors } from "@/components/forms/Form";
 import { Tabs, type TabItem } from "@/components/ui/Tabs";
 import { BindingTab, type BulkAction } from "@/components/ui/BindingTab";
 import { endpointFormSchema, type EndpointFormValues } from "@/schemas";
-import type { EndpointResponse, EndpointRoleChecked } from "@/api/types";
+import type {
+  EndpointMicroserviceChecked,
+  EndpointResponse,
+  EndpointRoleChecked,
+} from "@/api/types";
 import {
+  useBindEndpointMicroservice,
   useBindEndpointRole,
+  useEndpointMicroservicesChecked,
   useEndpointRolesChecked,
+  useUnbindEndpointMicroservice,
   useUnbindEndpointRole,
 } from "@/hooks/useEndpoints";
 
@@ -22,7 +29,7 @@ interface Props {
 const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"] as const;
 
 /**
- * Drawer for create + edit of an Endpoint. Hosts 2 tabs:
+ * Drawer for create + edit of an Endpoint. Hosts 3 tabs:
  * <ol>
  *   <li><b>General</b> — method/path/description/#params, the
  *       only tab that submits a CRUD payload.</li>
@@ -32,6 +39,11 @@ const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"] as const;
  *       checks per request, unlike {@code role_route} which only
  *       controls menu visibility). Available only in edit mode —
  *       same shape as {@code RouteFormDrawer}'s Roles tab.</li>
+ *   <li><b>Microservicios</b> — checked-listing of every
+ *       microservice, same toggle pattern ({@code
+ *       endpoint_microservice} — which service actually owns/
+ *       exposes this endpoint; purely a catalog relation, not
+ *       consulted by any authorization check).</li>
  * </ol>
  */
 export function EndpointFormDrawer({ open, endpoint, onClose, onSubmit }: Props) {
@@ -62,6 +74,15 @@ export function EndpointFormDrawer({ open, endpoint, onClose, onSubmit }: Props)
       key: "roles",
       label: "Roles",
       content: endpoint ? <RolesTab endpointId={endpoint.id} /> : <DisabledTabHint />,
+    },
+    {
+      key: "microservices",
+      label: "Microservicios",
+      content: endpoint ? (
+        <MicroservicesTab endpointId={endpoint.id} />
+      ) : (
+        <DisabledTabHint />
+      ),
     },
   ];
 
@@ -164,7 +185,7 @@ function GeneralTab({ endpoint, initialValues, onSubmit, onClose }: GeneralTabPr
 function DisabledTabHint() {
   return (
     <p className="text-sm text-slate-500">
-      Guarda el endpoint primero para habilitar la gestión de roles.
+      Guarda el endpoint primero para habilitar la gestión de vinculaciones.
     </p>
   );
 }
@@ -211,6 +232,54 @@ function RolesTab({ endpointId }: { endpointId: number }) {
       }}
       bulkAction={bulkAction}
       renderRow={(r) => r.name}
+    />
+  );
+}
+
+/* ====================== Microservices tab ====================== */
+
+function MicroservicesTab({ endpointId }: { endpointId: number }) {
+  const microservices = useEndpointMicroservicesChecked(endpointId);
+  const bind = useBindEndpointMicroservice();
+  const unbind = useUnbindEndpointMicroservice();
+  const pending = bind.isPending || unbind.isPending;
+
+  const bulkAction: BulkAction = {
+    bindLabel: "Vincular visibles",
+    unbindLabel: "Desvincular visibles",
+    testIdPrefix: "microservice-bulk",
+    onApply: (rowIds, action) => {
+      const mutator = action === "bind" ? bind : unbind;
+      void Promise.all(
+        rowIds.map((microserviceId) =>
+          mutator.mutateAsync({ id: endpointId, microserviceId }),
+        ),
+      );
+    },
+  };
+
+  return (
+    <BindingTab<EndpointMicroserviceChecked>
+      entityId={endpointId}
+      listTestIdPrefix="endpoint-microservice-bindings"
+      data={microservices.data}
+      isLoading={microservices.isLoading}
+      isPending={pending}
+      emptyText="No hay microservicios creados."
+      toggleIdPrefix="microservice-toggle"
+      searchPlaceholder="Buscar microservicio…"
+      getRowLabel={(m) => m.serviceId}
+      getRowId={(m) => m.microserviceId}
+      getRowChecked={(m) => m.checked}
+      onToggle={(microserviceId, checked) => {
+        if (checked) {
+          void unbind.mutateAsync({ id: endpointId, microserviceId });
+        } else {
+          void bind.mutateAsync({ id: endpointId, microserviceId });
+        }
+      }}
+      bulkAction={bulkAction}
+      renderRow={(m) => m.serviceId}
     />
   );
 }
