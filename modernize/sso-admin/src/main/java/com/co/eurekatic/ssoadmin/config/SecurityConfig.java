@@ -3,6 +3,7 @@ package com.co.eurekatic.ssoadmin.config;
 import com.co.eurekatic.common.security.JwtProperties;
 import com.co.eurekatic.common.security.JwtTokenService;
 import com.co.eurekatic.ssoadmin.service.AppAccessService;
+import com.co.eurekatic.ssoadmin.service.EndpointAccessService;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,14 +24,22 @@ import java.util.List;
 /**
  * Spring Security 6 configuration for sso-admin.
  *
- * <p>Authorization model: every business endpoint requires
- * {@code ROLE_ADMIN} AND the caller's roles must have a
- * {@code role_app} binding to this console's app (see
- * {@link SsoAdminAppAccessManager}, {@code sso.admin.app-name}).
- * Before this, {@code role_app} only controlled what
- * {@code /myMenu} showed in the sidebar — any caller with a role
- * literally named {@code ADMIN} reached every endpoint here
- * regardless of app scoping. Everyone else gets 403.
+ * <p>Authorization model: every business endpoint requires the
+ * caller's roles to have BOTH a {@code role_app} binding to this
+ * console's app ({@code sso.admin.app-name}) AND a {@code
+ * role_endpoint} binding matching the specific request — no
+ * bypass, not even for ADMIN (see {@link SsoAdminAccessManager}).
+ * The V15 migration seeds ADMIN with every endpoint that existed
+ * at seed time, so this is a no-op out of the box, but unbinding a
+ * specific endpoint from ADMIN via the Endpoints admin screen now
+ * genuinely revokes it — deliberately, so the per-endpoint toggle
+ * isn't silently inert for the one role most likely to be testing
+ * it. Before this class existed at all, {@code role_app} only
+ * controlled what {@code /myMenu} showed in the sidebar, and only
+ * {@code ROLE_ADMIN} could reach anything here — non-ADMIN roles
+ * were 100% blocked regardless of any binding. Everyone (ADMIN
+ * included) gets 403 on missing app access or a missing endpoint
+ * binding.
  *
  * <p>Public endpoints:
  * <ul>
@@ -73,10 +82,12 @@ import java.util.List;
 public class SecurityConfig {
 
     @Bean
-    public SsoAdminAppAccessManager ssoAdminAppAccessManager(
+    public SsoAdminAccessManager ssoAdminAccessManager(
             AppAccessService appAccessService,
+            EndpointAccessService endpointAccessService,
             AdminAccessProperties adminAccessProperties) {
-        return new SsoAdminAppAccessManager(appAccessService, adminAccessProperties.appName());
+        return new SsoAdminAccessManager(appAccessService, endpointAccessService,
+                adminAccessProperties.appName());
     }
 
     @Bean
@@ -84,7 +95,7 @@ public class SecurityConfig {
             HttpSecurity http,
             JwtTokenService jwt,
             JwtProperties jwtProperties,
-            SsoAdminAppAccessManager ssoAdminAppAccessManager) throws Exception {
+            SsoAdminAccessManager ssoAdminAccessManager) throws Exception {
 
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwt, jwtProperties);
 
@@ -125,13 +136,15 @@ public class SecurityConfig {
                         // bypass + publicEnd bypass + role
                         // intersection), same as /getQuery.
                         .requestMatchers("/getQuery", "/getWrite", "/myQueries", "/myMenu").authenticated()
-                        // Everything else requires ROLE_ADMIN AND a
-                        // role_app binding to this app — see
-                        // SsoAdminAppAccessManager. Was bare
+                        // Everything else requires a role_app binding
+                        // to this app AND a matching role_endpoint
+                        // binding — see SsoAdminAccessManager. No
+                        // bypass for ADMIN on either check. Was bare
                         // hasRole("ADMIN"); that let any ADMIN-named
                         // role into every endpoint here regardless
-                        // of whether it was ever scoped to this app.
-                        .anyRequest().access(ssoAdminAppAccessManager))
+                        // of whether it was ever scoped to this app,
+                        // and blocked every other role outright.
+                        .anyRequest().access(ssoAdminAccessManager))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }

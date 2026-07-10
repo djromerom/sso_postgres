@@ -35,7 +35,7 @@ public interface AppRepository extends JpaRepository<App, Long> {
     /**
      * True if the named app has a {@code role_app} binding to
      * any role in {@code roleNames}. Used by
-     * {@code SsoAdminAppAccessManager} (via
+     * {@code SsoAdminAccessManager} (via
      * {@code AppAccessService}) to gate access to this
      * console — see {@code App.roles} javadoc.
      */

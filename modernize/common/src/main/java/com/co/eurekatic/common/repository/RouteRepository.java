@@ -42,7 +42,7 @@ public interface RouteRepository extends JpaRepository<Route, Long> {
      * <p><b>{@code role_route} is the sole source of truth for
      * menu visibility.</b> {@code role_app} (does this role have
      * permission to use an app at all — see
-     * {@code SsoAdminAppAccessManager}) and {@code app_route}
+     * {@code SsoAdminAccessManager}) and {@code app_route}
      * (which app a route belongs to) answer a different
      * question and don't grant menu visibility by themselves.
      * This used to also be a UNION with a "broad" path — any

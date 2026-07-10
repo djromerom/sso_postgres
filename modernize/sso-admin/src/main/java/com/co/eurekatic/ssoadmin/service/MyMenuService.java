@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
  * one of their roles has a direct {@code role_route} binding to
  * it (see {@link RouteRepository#findVisibleForRoles}). {@code
  * role_app} answers a different question entirely — "can this
- * role use this app at all" (see {@code SsoAdminAppAccessManager})
+ * role use this app at all" (see {@code SsoAdminAccessManager})
  * — and does NOT by itself grant menu visibility; a role with
  * app-level access still only sees the routes it's explicitly
  * {@code role_route}-bound to. This used to be a broad-OR-fine

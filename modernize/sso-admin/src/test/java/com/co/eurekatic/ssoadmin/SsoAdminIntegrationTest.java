@@ -1,7 +1,10 @@
 package com.co.eurekatic.ssoadmin;
 
+import com.co.eurekatic.common.entity.App;
+import com.co.eurekatic.common.entity.Endpoint;
 import com.co.eurekatic.common.entity.Role;
 import com.co.eurekatic.common.entity.User;
+import com.co.eurekatic.common.repository.AppRepository;
 import com.co.eurekatic.common.repository.EndpointRepository;
 import com.co.eurekatic.common.repository.GroupRepository;
 import com.co.eurekatic.common.repository.MicroserviceRepository;
@@ -103,6 +106,7 @@ class SsoAdminIntegrationTest {
     @Autowired FilterChainProxy springSecurityFilterChain;
     @Autowired UserRepository userRepository;
     @Autowired RoleRepository roleRepository;
+    @Autowired AppRepository appRepository;
     @Autowired GroupRepository groupRepository;
     @Autowired MicroserviceRepository microserviceRepository;
     @Autowired EndpointRepository endpointRepository;
@@ -149,11 +153,14 @@ class SsoAdminIntegrationTest {
         // join-table rows.
         jdbcTemplate.execute("DELETE FROM role_query");
         jdbcTemplate.execute("DELETE FROM role_write");
+        jdbcTemplate.execute("DELETE FROM role_app");
+        jdbcTemplate.execute("DELETE FROM role_endpoint");
         queryRepository.deleteAll();
         writeDefinitionRepository.deleteAll();
         routeRepository.deleteAll();
         endpointRepository.deleteAll();
         microserviceRepository.deleteAll();
+        appRepository.deleteAll();
         userRepository.deleteAll();
         roleRepository.deleteAll();
         groupRepository.deleteAll();
@@ -196,6 +203,119 @@ class SsoAdminIntegrationTest {
         // configured — Spring Security's default for
         // stateless API is the 403 path.
         client.get().uri("/getUsers")
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    /* ====================== role_endpoint scoped access ====================== */
+
+    /**
+     * End-to-end proof of the {@code role_endpoint} enforcement
+     * added in {@code SsoAdminAccessManager}/{@code
+     * EndpointAccessService}: a non-ADMIN role with {@code role_app}
+     * to SSO-ADMIN but no {@code role_endpoint} bindings gets 403
+     * on every business endpoint; binding it to exactly one
+     * endpoint opens ONLY that one, leaving everything else 403.
+     */
+    @Test
+    void nonAdminRoleGetsScopedAccessViaRoleEndpoint() {
+        Role support = new Role("SOPORTE", "Soporte");
+        roleRepository.save(support);
+
+        User supportUser = new User();
+        supportUser.setEmail("soporte@example.com");
+        supportUser.setFullName("Soporte User");
+        supportUser.setPassword(passwordEncoder.encode("s0p0rte"));
+        supportUser.setEnabled(true);
+        supportUser.setActive(true);
+        supportUser.addRole(support);
+        userRepository.save(supportUser);
+
+        // role_app to SSO-ADMIN — necessary, but (per the new model)
+        // no longer sufficient on its own for a non-ADMIN role.
+        App app = new App();
+        app.setName("SSO-ADMIN");
+        app.setDescription("SSO Admin console");
+        app.addRole(support);
+        appRepository.save(app);
+
+        String token = tokenFor("soporte@example.com", "SOPORTE");
+
+        // No role_endpoint yet -> 403 on any business endpoint.
+        client.get().uri("/getUsers")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .exchange()
+                .expectStatus().isForbidden();
+
+        // Bind SOPORTE -> GET /getUsers specifically.
+        Endpoint endpoint = new Endpoint();
+        endpoint.setMethod("GET");
+        endpoint.setPath("/getUsers");
+        endpoint.setDescription("Listar usuarios");
+        endpoint.setNumberParams(0);
+        endpoint.addRole(support);
+        endpointRepository.save(endpoint);
+
+        // Now /getUsers works...
+        client.get().uri("/getUsers")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .exchange()
+                .expectStatus().isOk();
+
+        // ...but a DIFFERENT endpoint, never bound, still 403s.
+        client.put().uri("/updateAccount")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("id", 1, "fullName", "X"))
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    /**
+     * ADMIN has NO bypass on {@code role_endpoint} — a deliberate
+     * choice (see {@code SsoAdminAccessManager}'s Javadoc) so the
+     * per-endpoint toggle on the Endpoints admin screen never
+     * silently no-ops for ADMIN. Proven directly here rather than
+     * relying on V15's seed data, since this test's fresh H2 DB
+     * never runs Flyway.
+     */
+    @Test
+    void adminRoleAlsoRequiresRoleEndpointBinding() {
+        Role admin = roleRepository.findByName("ADMIN").orElseThrow();
+
+        App app = new App();
+        app.setName("SSO-ADMIN");
+        app.setDescription("SSO Admin console");
+        app.addRole(admin);
+        appRepository.save(app);
+
+        String token = tokenFor("root@example.com", "ADMIN");
+
+        // role_app alone isn't enough for ADMIN either, same as
+        // any other role.
+        client.get().uri("/getUsers")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .exchange()
+                .expectStatus().isForbidden();
+
+        Endpoint endpoint = new Endpoint();
+        endpoint.setMethod("GET");
+        endpoint.setPath("/getUsers");
+        endpoint.setDescription("Listar usuarios");
+        endpoint.setNumberParams(0);
+        endpoint.addRole(admin);
+        endpointRepository.save(endpoint);
+
+        client.get().uri("/getUsers")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .exchange()
+                .expectStatus().isOk();
+
+        // A different, unbound endpoint still 403s ADMIN too.
+        client.put().uri("/updateAccount")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("id", 1, "fullName", "X"))
                 .exchange()
                 .expectStatus().isForbidden();
     }
