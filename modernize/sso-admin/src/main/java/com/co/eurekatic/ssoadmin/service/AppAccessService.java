@@ -9,7 +9,7 @@ import java.util.List;
 /**
  * Answers "does role X have a {@code role_app} binding to app Y?",
  * cached in Redis (see {@code CacheConfig}) so
- * {@code SsoAdminAppAccessManager} doesn't hit Postgres on every
+ * {@code SsoAdminAccessManager} doesn't hit Postgres on every
  * request.
  *
  * <p>Cached per role name (not per caller's full role set) — role

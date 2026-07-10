@@ -3,6 +3,7 @@ package com.co.eurekatic.ssoadmin.config;
 import com.co.eurekatic.common.security.JwtProperties;
 import com.co.eurekatic.common.security.JwtTokenService;
 import com.co.eurekatic.ssoadmin.service.AppAccessService;
+import com.co.eurekatic.ssoadmin.service.EndpointAccessService;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,14 +24,18 @@ import java.util.List;
 /**
  * Spring Security 6 configuration for sso-admin.
  *
- * <p>Authorization model: every business endpoint requires
- * {@code ROLE_ADMIN} AND the caller's roles must have a
- * {@code role_app} binding to this console's app (see
- * {@link SsoAdminAppAccessManager}, {@code sso.admin.app-name}).
- * Before this, {@code role_app} only controlled what
- * {@code /myMenu} showed in the sidebar — any caller with a role
- * literally named {@code ADMIN} reached every endpoint here
- * regardless of app scoping. Everyone else gets 403.
+ * <p>Authorization model: every business endpoint requires the
+ * caller's roles to have a {@code role_app} binding to this
+ * console's app ({@code sso.admin.app-name}) — no bypass, not even
+ * for ADMIN. Past that gate: ADMIN reaches everything
+ * unconditionally; any other role needs a {@code role_endpoint}
+ * binding matching the specific request (see
+ * {@link SsoAdminAccessManager}). Before this, {@code role_app}
+ * only controlled what {@code /myMenu} showed in the sidebar, and
+ * only {@code ROLE_ADMIN} could reach anything here at all —
+ * non-ADMIN roles were 100% blocked from sso-admin regardless of
+ * any binding. Everyone else (no app access, or no matching
+ * endpoint binding) gets 403.
  *
  * <p>Public endpoints:
  * <ul>
@@ -73,10 +78,12 @@ import java.util.List;
 public class SecurityConfig {
 
     @Bean
-    public SsoAdminAppAccessManager ssoAdminAppAccessManager(
+    public SsoAdminAccessManager ssoAdminAccessManager(
             AppAccessService appAccessService,
+            EndpointAccessService endpointAccessService,
             AdminAccessProperties adminAccessProperties) {
-        return new SsoAdminAppAccessManager(appAccessService, adminAccessProperties.appName());
+        return new SsoAdminAccessManager(appAccessService, endpointAccessService,
+                adminAccessProperties.appName());
     }
 
     @Bean
@@ -84,7 +91,7 @@ public class SecurityConfig {
             HttpSecurity http,
             JwtTokenService jwt,
             JwtProperties jwtProperties,
-            SsoAdminAppAccessManager ssoAdminAppAccessManager) throws Exception {
+            SsoAdminAccessManager ssoAdminAccessManager) throws Exception {
 
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwt, jwtProperties);
 
@@ -125,13 +132,15 @@ public class SecurityConfig {
                         // bypass + publicEnd bypass + role
                         // intersection), same as /getQuery.
                         .requestMatchers("/getQuery", "/getWrite", "/myQueries", "/myMenu").authenticated()
-                        // Everything else requires ROLE_ADMIN AND a
-                        // role_app binding to this app — see
-                        // SsoAdminAppAccessManager. Was bare
+                        // Everything else requires a role_app binding
+                        // to this app, then either ADMIN (unconditional)
+                        // or a matching role_endpoint binding — see
+                        // SsoAdminAccessManager. Was bare
                         // hasRole("ADMIN"); that let any ADMIN-named
                         // role into every endpoint here regardless
-                        // of whether it was ever scoped to this app.
-                        .anyRequest().access(ssoAdminAppAccessManager))
+                        // of whether it was ever scoped to this app,
+                        // and blocked every other role outright.
+                        .anyRequest().access(ssoAdminAccessManager))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }

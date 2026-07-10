@@ -141,7 +141,7 @@ public class AppService {
     /**
      * Invalidates {@code AppAccessService}'s cached "does this role
      * have access to this app" entry right away, so
-     * {@code SsoAdminAppAccessManager} sees the change on the very
+     * {@code SsoAdminAccessManager} sees the change on the very
      * next request instead of waiting out the TTL. The key shape
      * (`appName + ":" + roleName`) must stay in sync with
      * {@code AppAccessService#hasAccess}'s {@code @Cacheable} key.
