@@ -8,7 +8,6 @@ import { RestorePasswordPage } from "@/auth/RestorePasswordPage";
 import { App } from "@/App";
 import { GroupsListPage } from "@/pages/groups/GroupsListPage";
 import { MicroservicesListPage } from "@/pages/microservices/MicroservicesListPage";
-import { QueryServicesListPage } from "@/pages/query-services/QueryServicesListPage";
 import { QueriesAdminPage } from "@/pages/queries/QueriesAdminPage";
 import { QueriesDynamicPage } from "@/pages/queries/QueriesDynamicPage";
 import { EndpointsListPage } from "@/pages/endpoints/EndpointsListPage";
@@ -82,7 +81,6 @@ export const router = createBrowserRouter([
           { path: "roles", element: <RolesListPage /> },
           { path: "groups", element: <GroupsListPage /> },
           { path: "microservices", element: <MicroservicesListPage /> },
-          { path: "query-services", element: <QueryServicesListPage /> },
           // Legacy path — the consumer-only "Queries Catalog" page
           // was merged into the admin page at /admin/query-catalog
           // (which now also executes). Redirect so old links/menus

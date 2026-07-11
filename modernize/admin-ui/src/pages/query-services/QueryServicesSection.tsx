@@ -11,20 +11,20 @@ import {
   useMicroservices,
   useUpdateMicroservice,
 } from "@/hooks/useMicroservices";
-import {
-  useQueryServiceStatus,
-  useRestartQueryService,
-} from "@/hooks/useQueryServices";
+import { useQueryServiceStatus, useRestartQueryService } from "@/hooks/useQueryServices";
 import type { MicroserviceResponse } from "@/api/types";
 import type { MicroserviceFormValues } from "@/schemas";
 import { LogsModal } from "./LogsModal";
 import { QueryServiceFormDrawer } from "./QueryServiceFormDrawer";
 
 /**
- * The one page that fully owns `kind=QUERY` microservices:
+ * The section that fully owns `kind=QUERY` microservices:
  * CRUD (create/edit/delete, which drives the provisioner sidecar)
- * AND ops (per-container status / logs / restart). REST
- * microservices live on their own page at {@code /admin/microservices}.
+ * AND ops (per-container status / logs / restart). It renders at
+ * the bottom of the Microservicios page ({@code /admin/microservices},
+ * see {@code MicroservicesListPage}) — the REST table sits above,
+ * this QUERY table below — so there's no longer a separate
+ * /admin/query-services route.
  *
  * <p>The list comes from {@link useMicroservices} filtered to
  * QUERY (not the separate query-services key) so the CRUD
@@ -32,7 +32,7 @@ import { QueryServiceFormDrawer } from "./QueryServiceFormDrawer";
  * polls per row via {@link useQueryServiceStatus} (5s while
  * non-UP, idle once running/absent).
  */
-export function QueryServicesListPage() {
+export function QueryServicesSection() {
   const microservices = useMicroservices();
   const createMs = useCreateMicroservice();
   const updateMs = useUpdateMicroservice();
@@ -184,13 +184,13 @@ export function QueryServicesListPage() {
   }, [rows, search]);
 
   return (
-    <section>
+    <section className="border-t border-slate-200 pt-8">
       <header className="mb-4 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Query Services</h1>
+          <h2 className="text-lg font-semibold text-slate-900">Query Services</h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            Instancias de <code>query-service</code> aprovisionadas por el sidecar
-            ({rows.length} {rows.length === 1 ? "fila" : "filas"})
+            Instancias de <code>query-service</code> aprovisionadas por el sidecar ({rows.length}{" "}
+            {rows.length === 1 ? "fila" : "filas"})
           </p>
         </div>
         <div className="flex items-center gap-4">

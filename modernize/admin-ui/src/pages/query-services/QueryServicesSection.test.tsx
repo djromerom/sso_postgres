@@ -4,11 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ToastProvider } from "@/components/ui/Toast";
-import { QueryServicesListPage } from "./QueryServicesListPage";
-import type {
-  ContainerStatusResponse,
-  MicroserviceResponse,
-} from "@/api/types";
+import { QueryServicesSection } from "./QueryServicesSection";
+import type { ContainerStatusResponse, MicroserviceResponse } from "@/api/types";
 
 /**
  * Renders the page with a fresh QueryClient (staleTime 0, retry
@@ -29,7 +26,7 @@ function renderPage() {
     <QueryClientProvider client={qc}>
       <ToastProvider>
         <MemoryRouter>
-          <QueryServicesListPage />
+          <QueryServicesSection />
         </MemoryRouter>
       </ToastProvider>
     </QueryClientProvider>,
@@ -76,12 +73,10 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 function findFetchCall(fetchSpy: ReturnType<typeof vi.fn>, urlFragment: string) {
-  return fetchSpy.mock.calls.find(([url]) =>
-    typeof url === "string" && url.includes(urlFragment),
-  );
+  return fetchSpy.mock.calls.find(([url]) => typeof url === "string" && url.includes(urlFragment));
 }
 
-describe("QueryServicesListPage", () => {
+describe("QueryServicesSection", () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -95,9 +90,7 @@ describe("QueryServicesListPage", () => {
   it("renders an empty state when there are no QUERY rows", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse([])); // getMicroservices
     renderPage();
-    expect(
-      await screen.findByText(/Aún no hay query services/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Aún no hay query services/i)).toBeInTheDocument();
     // The page must NOT call /container/status when the list is empty
     // (each row's hook is `enabled: id != null`, and id is null until
     // a row exists). Empty list → zero status calls.
@@ -114,8 +107,12 @@ describe("QueryServicesListPage", () => {
       instanceName: "pg",
     });
     fetchSpy.mockResolvedValueOnce(jsonResponse([row1, row2])); // list
-    fetchSpy.mockResolvedValueOnce(jsonResponse(mkStatus({ state: "running", rawState: "running" }))); // status row1
-    fetchSpy.mockResolvedValueOnce(jsonResponse(mkStatus({ state: "running", rawState: "running" }))); // status row2
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse(mkStatus({ state: "running", rawState: "running" })),
+    ); // status row1
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse(mkStatus({ state: "running", rawState: "running" })),
+    ); // status row2
 
     renderPage();
     expect(await screen.findByText("q-oracle")).toBeInTheDocument();
@@ -149,7 +146,9 @@ describe("QueryServicesListPage", () => {
     // Exactly one status call (only the QUERY row, not the REST one)
     await waitFor(() =>
       expect(
-        fetchSpy.mock.calls.filter(([u]) => typeof u === "string" && u.includes("/container/status")),
+        fetchSpy.mock.calls.filter(
+          ([u]) => typeof u === "string" && u.includes("/container/status"),
+        ),
       ).toHaveLength(1),
     );
   });
@@ -160,9 +159,7 @@ describe("QueryServicesListPage", () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(mkStatus()));
     // The apiClient decodes the body via resp.json() — a JSON-encoded
     // string is what the production logs endpoint returns.
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse("Hello\nworld\n"),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse("Hello\nworld\n"));
 
     renderPage();
     await userEvent.click(await screen.findByTestId("view-logs-7"));
@@ -185,12 +182,8 @@ describe("QueryServicesListPage", () => {
     const restartBtn = await screen.findByRole("button", { name: /Reiniciar/i });
     await userEvent.click(restartBtn);
 
-    expect(
-      findFetchCall(fetchSpy, "/microservice/4/container/restart"),
-    ).toBeDefined();
-    expect(
-      await screen.findByText(/Reinicio solicitado — oracle-dev/i),
-    ).toBeInTheDocument();
+    expect(findFetchCall(fetchSpy, "/microservice/4/container/restart")).toBeDefined();
+    expect(await screen.findByText(/Reinicio solicitado — oracle-dev/i)).toBeInTheDocument();
   });
 
   it("renders an error state when the list endpoint fails", async () => {
@@ -201,9 +194,7 @@ describe("QueryServicesListPage", () => {
       }),
     );
     renderPage();
-    expect(
-      await screen.findByText(/sso-admin está UP/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/sso-admin está UP/i)).toBeInTheDocument();
   });
 
   it("renders PROVISIONING badge while the container is starting", async () => {

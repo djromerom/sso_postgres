@@ -12,14 +12,16 @@ import {
 } from "@/hooks/useMicroservices";
 import type { MicroserviceResponse } from "@/api/types";
 import { MicroserviceFormDrawer } from "./MicroserviceFormDrawer";
+import { QueryServicesSection } from "@/pages/query-services/QueryServicesSection";
 import type { MicroserviceFormValues } from "@/schemas";
 
 /**
- * CRUD for REST microservices only — the classic gateway routing
- * rules. QUERY-kind services (JDBC-backed query-service
- * containers) live on their own page at {@code /admin/query-services},
- * which owns their CRUD + ops. Keeping the two apart means neither
- * table nor drawer has to branch on `kind`.
+ * The Microservicios page: REST microservices (the classic gateway
+ * routing rules) up top, then the QUERY-kind services (JDBC-backed
+ * query-service containers, with their own CRUD + ops) in the
+ * {@link QueryServicesSection} below. The two tables stay separate —
+ * each has its own drawer so neither has to branch on `kind` — but
+ * share one page instead of a standalone /admin/query-services route.
  */
 export function MicroservicesListPage() {
   const microservices = useMicroservices();
@@ -32,7 +34,7 @@ export function MicroservicesListPage() {
   const [deleting, setDeleting] = useState<MicroserviceResponse | null>(null);
   const [search, setSearch] = useState("");
 
-  // REST rows only; QUERY services are managed on their own page.
+  // REST rows only; QUERY services are managed in the section below.
   const restRows = useMemo(
     () => (microservices.data ?? []).filter((m) => m.kind === "REST"),
     [microservices.data],
@@ -43,8 +45,7 @@ export function MicroservicesListPage() {
     if (!q) return restRows;
     return restRows.filter(
       (m) =>
-        m.serviceId.toLowerCase().includes(q) ||
-        (m.description ?? "").toLowerCase().includes(q),
+        m.serviceId.toLowerCase().includes(q) || (m.description ?? "").toLowerCase().includes(q),
     );
   }, [restRows, search]);
 
@@ -108,58 +109,61 @@ export function MicroservicesListPage() {
   ];
 
   return (
-    <section>
-      <header className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Microservicios</h1>
-        <Button onClick={() => setCreating(true)}>+ Nuevo microservicio</Button>
-      </header>
-      <div className="mb-3">
-        <SearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="Buscar por service ID o descripción…"
+    <div>
+      <section>
+        <header className="mb-4 flex items-center justify-between">
+          <h1 className="text-xl font-semibold text-slate-900">Microservicios</h1>
+          <Button onClick={() => setCreating(true)}>+ Nuevo microservicio</Button>
+        </header>
+        <div className="mb-3">
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Buscar por service ID o descripción…"
+          />
+        </div>
+        <Table
+          columns={columns}
+          rows={filteredMicroservices}
+          rowKey={(m) => m.id}
+          loading={microservices.isLoading}
+          empty={search ? "Sin resultados." : "Aún no hay microservicios REST."}
         />
-      </div>
-      <Table
-        columns={columns}
-        rows={filteredMicroservices}
-        rowKey={(m) => m.id}
-        loading={microservices.isLoading}
-        empty={search ? "Sin resultados." : "Aún no hay microservicios REST."}
-      />
-      <MicroserviceFormDrawer
-        open={creating || editing !== null}
-        microservice={editing}
-        onClose={() => {
-          setCreating(false);
-          setEditing(null);
-        }}
-        onSubmit={handleSubmit}
-      />
-      <Modal
-        open={deleting !== null}
-        onClose={() => setDeleting(null)}
-        title="Eliminar microservicio"
-        description={`¿Seguro que quieres eliminar "${deleting?.serviceId}"? Esta acción no se puede deshacer.`}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setDeleting(null)}>
-              Cancelar
-            </Button>
-            <Button
-              variant="danger"
-              loading={deleteMs.isPending}
-              onClick={() => void confirmDelete()}
-            >
-              Eliminar
-            </Button>
-          </>
-        }
-      >
-        <p className="text-sm text-slate-600">
-          Si hay endpoints vinculados, el backend podría rechazar la operación.
-        </p>
-      </Modal>
-    </section>
+        <MicroserviceFormDrawer
+          open={creating || editing !== null}
+          microservice={editing}
+          onClose={() => {
+            setCreating(false);
+            setEditing(null);
+          }}
+          onSubmit={handleSubmit}
+        />
+        <Modal
+          open={deleting !== null}
+          onClose={() => setDeleting(null)}
+          title="Eliminar microservicio"
+          description={`¿Seguro que quieres eliminar "${deleting?.serviceId}"? Esta acción no se puede deshacer.`}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setDeleting(null)}>
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                loading={deleteMs.isPending}
+                onClick={() => void confirmDelete()}
+              >
+                Eliminar
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-slate-600">
+            Si hay endpoints vinculados, el backend podría rechazar la operación.
+          </p>
+        </Modal>
+      </section>
+      <QueryServicesSection />
+    </div>
   );
 }

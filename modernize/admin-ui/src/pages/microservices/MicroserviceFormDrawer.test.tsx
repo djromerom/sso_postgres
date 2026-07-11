@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ToastProvider } from "@/components/ui/Toast";
@@ -8,10 +8,11 @@ import { apiClient } from "@/api/client";
 import type { MicroserviceResponse } from "@/api/types";
 
 /**
- * The microservices page is REST-only after the QUERY split:
- * QUERY services (and their drawer) live on the Query Services
- * page. These tests assert the REST create flow and that QUERY
- * rows never leak into this table.
+ * The Microservicios page shows the REST table up top and the
+ * QueryServicesSection (QUERY-kind CRUD/ops) below. These tests
+ * assert the REST create flow, that the REST table itself still
+ * filters out QUERY rows, and that QUERY services surface in the
+ * section below rather than leaking into the REST table.
  */
 function renderPage() {
   const qc = new QueryClient({
@@ -57,7 +58,7 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-describe("MicroservicesListPage — REST-only", () => {
+describe("MicroservicesListPage — REST table + Query Services section", () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -110,7 +111,7 @@ describe("MicroservicesListPage — REST-only", () => {
     expect(body.targetUrlPort).toBe("9000");
   });
 
-  it("lists REST rows and filters out QUERY services", async () => {
+  it("shows REST rows up top and QUERY services in the section below", async () => {
     const rest = mkMs({ id: 1, serviceId: "orders" });
     const query = mkMs({
       id: 2,
@@ -123,7 +124,17 @@ describe("MicroservicesListPage — REST-only", () => {
     fetchSpy.mockResolvedValue(jsonResponse([rest, query]));
 
     renderPage();
+
+    // REST row renders in the Microservicios table.
     expect(await screen.findByText("orders")).toBeInTheDocument();
-    expect(screen.queryByText("q-oracle")).not.toBeInTheDocument();
+    // QUERY service now renders in the Query Services section below.
+    expect(await screen.findByText("oracle-dev")).toBeInTheDocument();
+
+    // ...and does NOT leak into the REST table above it.
+    const restSection = screen
+      .getByRole("heading", { name: "Microservicios" })
+      .closest("section") as HTMLElement;
+    expect(within(restSection).queryByText("q-oracle")).not.toBeInTheDocument();
+    expect(within(restSection).queryByText("oracle-dev")).not.toBeInTheDocument();
   });
 });
